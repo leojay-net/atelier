@@ -1,0 +1,7 @@
+id: pdf_print
+version: 1
+kind: export.pdf
+description: "PDF for print: pictures untouched, every font must be embedded"
+settings:
+  compress: false
+  checks: [fonts_embedded]

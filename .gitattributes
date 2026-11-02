@@ -1,0 +1,2 @@
+# Fixture bytes feed golden hashes; never let git rewrite them.
+tests/fixtures/** -text

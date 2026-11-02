@@ -1,0 +1,19 @@
+id: og_image
+version: 1
+kind: export.image
+description: Open Graph / link preview card, 1200x630 JPEG ≤ 300 KB
+settings:
+  format: jpeg
+  quality: 85
+  min_quality: 55
+  subsampling: "4:2:0"
+  progressive: true
+  optimize: true
+  alpha: false
+  background: "#ffffff"
+  icc: srgb
+  size: {width: 1200, height: 630, mode: fill, focus: attention}
+  max_bytes: 307200
+  # Platforms crop cards to ~1.91:1 or square; keep text away from the edges.
+  safe_area: {top: 0.06, bottom: 0.06, left: 0.06, right: 0.06}
+  checks: [dimensions, file_size_budget, color_profile, safe_margins]

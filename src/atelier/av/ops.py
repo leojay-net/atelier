@@ -1,0 +1,551 @@
+"""Video ops (docs/03 §3.4). Each one contributes filters to the fused ffmpeg graph.
+
+A video op is a *builder*: it receives the `Graph` (with the state of the video so far) and its
+validated params, and adds filters. It never runs ffmpeg; the runner fuses adjacent builders and
+encodes once (`worker.run_graph_job`). Time-range and size problems are reported from here, in
+terms of what the previous steps produced.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from typing import Any, Literal, TypeVar
+
+import numpy as np
+from PIL import Image
+from pydantic import Field, model_validator
+
+from atelier.av.export import av_summary
+from atelier.av.graph import Graph, num
+from atelier.media import MediaType
+from atelier.ops.registry import Artifact, Determinism, OpError, Params, op
+from atelier.spec.types import Aspect, Fraction, Timecode
+
+B = TypeVar("B", bound=Callable[[Graph, Any], None])
+RESOURCES = ("ffmpeg", "ffprobe")
+Anchor = Literal[
+    "top_left", "top_center", "top_right", "center_left", "center", "center_right",
+    "bottom_left", "bottom_center", "bottom_right",
+]  # fmt: skip
+
+
+def video_op(
+    *,
+    name: str,
+    version: str,
+    params: type[Params],
+    description: str,
+    inputs: tuple[MediaType, ...] = (MediaType.VIDEO,),
+    variadic: bool = False,
+    check_inputs: Callable[[Any, int], str | None] | None = None,
+    also: tuple[str, ...] = (),
+    summary: Callable[[Artifact], str] = av_summary,
+    hidden: bool = False,
+    determinism: Determinism = Determinism.PERCEPTUAL,
+) -> Callable[[B], B]:
+    """Register a graph builder as a video op. The builder is its own worker entry point.
+    `also` names further pinned resources it depends on (fonts, for ops that draw text).
+    `hidden` keeps it out of the system-prompt catalogue (the token budget, docs/08 Phase 6)
+    while leaving it fully callable by name and through `describe_op`. `determinism` defaults
+    to PERCEPTUAL (a classical filter); an op whose builder samples a neural model (tracked
+    reframing) overrides it to SEEDED_ML."""
+
+    def decorate(builder: B) -> B:
+        return op(
+            name=name,
+            version=version,
+            inputs=inputs,
+            output=MediaType.VIDEO,
+            determinism=determinism,
+            params=params,
+            summary=summary,
+            description=description,
+            resources=(*RESOURCES, *also),
+            resources_by_media={MediaType.IMAGE: ("pillow", "icc")},  # pictures pass through Pillow
+            variadic=variadic,
+            check_inputs=check_inputs,
+            graph=builder,
+            graph_media=inputs[:1],
+            hidden=hidden,
+        )(builder)
+
+    return decorate
+
+
+def _even(x: float) -> int:
+    return max(2, int(x) // 2 * 2)
+
+
+# -- trim --------------------------------------------------------------------------------------
+
+
+class TrimParams(Params):
+    start: Timecode = Field(0.0, description="where the clip starts (seconds or [HH:]MM:SS[.mmm])")
+    end: Timecode | None = Field(None, description="where it ends; omit to keep the rest")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> TrimParams:
+        if self.end is not None and self.end <= self.start:
+            raise ValueError(f"end ({self.end:g}s) must be after start ({self.start:g}s)")
+        return self
+
+
+@video_op(
+    name="video.trim",
+    version="1.0.0",
+    params=TrimParams,
+    description="cut a time range, frame-accurate (video and audio)",
+)
+def trim(g: Graph, p: TrimParams) -> None:
+    """Keep only the part of the video between `start` and `end`. Cuts are frame-accurate:
+    the range is applied to the decoded video, not to keyframes, and the audio is cut at the
+    same instants so it stays in sync. The result starts at 0."""
+    total = g.duration
+    if total is not None and p.start >= total:
+        raise OpError(f"trim start {p.start:g}s is past the end: the video is {total:.2f}s long")
+    if total is not None and p.end is not None and p.end > total + 0.001:
+        raise OpError(
+            f"trim end {p.end:g}s is past the end: the video is {total:.2f}s long "
+            f"(use end <= {total:.2f})"
+        )
+    end = p.end if p.end is not None else total
+    args: dict[str, Any] = {"start": p.start}
+    if p.end is not None:
+        args["end"] = p.end
+    g.vf("trim", args)
+    g.vf("setpts", {"expr": "PTS-STARTPTS"})
+    if g.has_audio:
+        g.af("atrim", args)
+        g.af("asetpts", {"expr": "PTS-STARTPTS"})
+    g.duration = (end - p.start) if end is not None else None
+
+
+# -- reframe -----------------------------------------------------------------------------------
+
+
+class ReframeParams(Params):
+    aspect: Aspect = Field(description="target shape as W:H (9:16, 1:1, 16:9) or a number")
+    mode: Literal["fill", "fit", "blur_pad"] = Field(
+        "fill",
+        description="fill: crop to the shape; fit: pad with black; "
+        "blur_pad: pad with a blurred copy",
+    )
+    focus_x: Fraction = Field(0.5, ge=0, le=1, description="fill: crop position, 0 left … 1 right")
+    focus_y: Fraction = Field(0.5, ge=0, le=1, description="fill: crop position, 0 top … 1 bottom")
+
+
+@video_op(
+    name="video.reframe",
+    version="1.0.0",
+    params=ReframeParams,
+    description="change the aspect ratio: crop, pad, or blurred pad",
+)
+def reframe(g: Graph, p: ReframeParams) -> None:
+    """Change the shape of the video to `aspect`. `fill` crops (choose the crop position with
+    focus_x/focus_y), `fit` adds black bars, `blur_pad` fills the bars with a blurred, enlarged
+    copy of the video (the usual way to turn landscape into vertical without cropping)."""
+    w, h, a = g.width, g.height, p.aspect
+    if p.mode == "fill":
+        nw, nh = (_even(h * a), h) if w / h > a else (w, _even(w / a))
+        g.vf(
+            "crop",
+            {"w": nw, "h": nh, "x": f"(iw-ow)*{num(p.focus_x)}", "y": f"(ih-oh)*{num(p.focus_y)}"},
+        )
+    else:
+        nw, nh = (w, _even(w / a)) if w / h > a else (_even(h * a), h)
+        if p.mode == "fit":
+            g.vf("pad", {"w": nw, "h": nh, "x": "(ow-iw)/2", "y": "(oh-ih)/2", "color": "black"})
+        else:
+            assert g.video is not None
+            back, front = g.add("split", {"outputs": 2}, ins=[g.video], outs=2, prefix="v")
+            (back,) = g.add(
+                "scale",
+                {"w": nw, "h": nh, "force_original_aspect_ratio": "increase", "flags": "bilinear"},
+                ins=[back],
+                prefix="v",
+            )
+            (back,) = g.add("crop", {"w": nw, "h": nh}, ins=[back], prefix="v")
+            (back,) = g.add("boxblur", {"luma_radius": 24, "luma_power": 2}, ins=[back], prefix="v")
+            (front,) = g.add(
+                "scale",
+                {"w": nw, "h": nh, "force_original_aspect_ratio": "decrease", "flags": "lanczos"},
+                ins=[front],
+                prefix="v",
+            )
+            (g.video,) = g.add(
+                "overlay", {"x": "(W-w)/2", "y": "(H-h)/2"}, ins=[back, front], prefix="v"
+            )
+    g.width, g.height = nw, nh
+
+
+# -- speed -------------------------------------------------------------------------------------
+
+
+class SpeedParams(Params):
+    factor: float = Field(gt=0.25, le=4.0, description="2 plays twice as fast, 0.5 half as fast")
+
+
+def _atempo_chain(factor: float) -> list[float]:
+    """atempo only accepts 0.5–2.0 per stage, so chain stages for larger changes."""
+    stages = []
+    while factor > 2.0:
+        stages.append(2.0)
+        factor /= 2.0
+    while factor < 0.5:
+        stages.append(0.5)
+        factor /= 0.5
+    return [*stages, factor]
+
+
+@video_op(
+    name="video.speed",
+    version="1.0.0",
+    params=SpeedParams,
+    description="speed up or slow down; audio pitch is preserved",
+)
+def speed(g: Graph, p: SpeedParams) -> None:
+    """Change playback speed by `factor`. Audio keeps its pitch, and the frame rate stays what
+    it was (slowing down repeats frames, speeding up drops them), so slow motion is not
+    choppy at a halved rate. The duration becomes duration / factor."""
+    fps = g.fps
+    g.vf("setpts", {"expr": f"PTS/{num(p.factor)}"})
+    g.vf("fps", {"fps": fps})
+    if g.has_audio:
+        for stage in _atempo_chain(p.factor):
+            g.af("atempo", {"tempo": stage})
+    if g.duration is not None:
+        g.duration /= p.factor
+
+
+# -- fade --------------------------------------------------------------------------------------
+
+
+class FadeParams(Params):
+    fade_in: Timecode = Field(
+        0.0, description="seconds of fade from black (and silence) at the start"
+    )
+    fade_out: Timecode = Field(0.0, description="seconds of fade to black (and silence) at the end")
+
+    @model_validator(mode="after")
+    def _something(self) -> FadeParams:
+        if self.fade_in <= 0 and self.fade_out <= 0:
+            raise ValueError("set fade_in and/or fade_out to more than 0 seconds")
+        return self
+
+
+@video_op(
+    name="video.fade",
+    version="1.0.0",
+    params=FadeParams,
+    description="fade in from and/or out to black, with the audio",
+)
+def fade(g: Graph, p: FadeParams) -> None:
+    """Fade the picture (and the sound) in at the start and/or out at the end."""
+    total = g.duration
+    if p.fade_out > 0 and total is None:
+        raise OpError("fade_out needs a known duration; trim the video first")
+    if total is not None and p.fade_in + p.fade_out > total + 0.001:
+        raise OpError(
+            f"fades ({p.fade_in + p.fade_out:g}s) are longer than the video ({total:.2f}s)"
+        )
+    if p.fade_in > 0:
+        g.vf("fade", {"t": "in", "st": 0, "d": p.fade_in})
+        if g.has_audio:
+            g.af("afade", {"t": "in", "st": 0, "d": p.fade_in})
+    if p.fade_out > 0 and total is not None:
+        start = total - p.fade_out
+        g.vf("fade", {"t": "out", "st": start, "d": p.fade_out})
+        if g.has_audio:
+            g.af("afade", {"t": "out", "st": start, "d": p.fade_out})
+
+
+# -- overlay -----------------------------------------------------------------------------------
+
+
+class OverlayParams(Params):
+    anchor: Anchor = Field("top_right", description="where the image sits")
+    margin: Fraction = Field(
+        0.04, ge=0, le=0.5, description="gap from the edge, as a fraction of the width"
+    )
+    scale: Fraction = Field(
+        0.15, gt=0, le=1, description="image width as a fraction of the video width"
+    )
+    opacity: Fraction = Field(1.0, gt=0, le=1, description="1 is opaque")
+    start: Timecode = Field(0.0, description="when it appears (seconds)")
+    end: Timecode | None = Field(
+        None, description="when it disappears; omit for the rest of the video"
+    )
+
+    @model_validator(mode="after")
+    def _ordered(self) -> OverlayParams:
+        if self.end is not None and self.end <= self.start:
+            raise ValueError(f"end ({self.end:g}s) must be after start ({self.start:g}s)")
+        return self
+
+
+_ANCHOR = {
+    "top_left": (0, 0), "top_center": (0.5, 0), "top_right": (1, 0),
+    "center_left": (0, 0.5), "center": (0.5, 0.5), "center_right": (1, 0.5),
+    "bottom_left": (0, 1), "bottom_center": (0.5, 1), "bottom_right": (1, 1),
+}  # fmt: skip
+
+
+@video_op(
+    name="video.overlay",
+    version="1.0.0",
+    params=OverlayParams,
+    inputs=(MediaType.VIDEO, MediaType.IMAGE),
+    description="place an image (logo) on the video, optionally for a time range",
+)
+def overlay(g: Graph, p: OverlayParams) -> None:
+    """Place the second input (an image, usually a logo) on the video at an anchor, with a
+    margin, size, opacity and an optional time range. The margin is measured from the video
+    edges, so the same logo lands in the same relative spot on any frame size."""
+    logo = g.extra(0)
+    iw, ih = logo.meta["size"]
+    ow = _even(g.width * p.scale)
+    oh = _even(ow * ih / iw)
+    margin = round(g.width * p.margin)
+    fx, fy = _ANCHOR[p.anchor]
+    x = round(fx * (g.width - ow - 2 * margin)) + margin
+    y = round(fy * (g.height - oh - 2 * margin)) + margin
+    (img,) = g.add("scale", {"w": ow, "h": oh, "flags": "lanczos"}, ins=[g.extra_label(0)])
+    if p.opacity < 1:
+        (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
+        (img,) = g.add("colorchannelmixer", {"aa": p.opacity}, ins=[img])
+    args: dict[str, Any] = {"x": x, "y": y}
+    if p.start > 0 or p.end is not None:
+        window = (
+            f"gte(t,{num(p.start)})" if p.end is None else f"between(t,{num(p.start)},{num(p.end)})"
+        )
+        args["enable"] = window
+    assert g.video is not None
+    (g.video,) = g.add("overlay", args, ins=[g.video, img], prefix="v")
+    boxes = g.notes.setdefault("boxes", [])
+    boxes.append(
+        {
+            "kind": "overlay",
+            "label": "logo",
+            "box": [x / g.width, y / g.height, ow / g.width, oh / g.height],
+            "t": [p.start, p.end],
+        }
+    )
+
+
+# -- color -------------------------------------------------------------------------------------
+
+
+class ColorParams(Params):
+    brightness: float = Field(0.0, ge=-1.0, le=1.0, description="-1 darker … 1 brighter")
+    contrast: float = Field(1.0, ge=0.0, le=3.0, description="1 unchanged; above 1 stronger")
+    saturation: float = Field(1.0, ge=0.0, le=3.0, description="0 grayscale, 1 unchanged")
+    gamma: float = Field(1.0, ge=0.1, le=3.0, description="above 1 lifts the midtones")
+
+    @model_validator(mode="after")
+    def _something(self) -> ColorParams:
+        if (self.brightness, self.contrast, self.saturation, self.gamma) == (0.0, 1.0, 1.0, 1.0):
+            raise ValueError("nothing to change: every value is at its neutral setting")
+        return self
+
+
+@video_op(
+    name="video.color",
+    version="1.0.0",
+    params=ColorParams,
+    description="adjust brightness, contrast, saturation and gamma of the picture",
+)
+def color(g: Graph, p: ColorParams) -> None:
+    """Adjust the picture: `brightness` shifts it, `contrast` stretches it around the middle,
+    `saturation` scales color (0 is black and white) and `gamma` bends the midtones. The sound
+    is untouched. Values are neutral at 0 / 1 / 1 / 1."""
+    g.vf(
+        "eq",
+        {
+            "brightness": p.brightness,
+            "contrast": p.contrast,
+            "saturation": p.saturation,
+            "gamma": p.gamma,
+        },
+    )
+
+
+# -- mute --------------------------------------------------------------------------------------
+
+
+class MuteParams(Params):
+    pass
+
+
+@video_op(
+    name="video.mute",
+    version="1.0.0",
+    params=MuteParams,
+    description="remove the sound from a video",
+)
+def mute(g: Graph, p: MuteParams) -> None:
+    """Drop the audio track. The picture is untouched and the file has no sound at all (which is
+    not the same as a silent track); use `video.soundtrack` to give it music."""
+    del p
+    g.audio = None
+    g.sample_rate = g.channels = 0
+
+
+# -- stabilize -----------------------------------------------------------------------------------
+
+
+class StabilizeParams(Params):
+    shakiness: int = Field(
+        5, ge=1, le=10, description="how shaky the source is; higher tries harder and is slower"
+    )
+    smoothing: float = Field(
+        0.5,
+        ge=0,
+        le=5,
+        description="seconds of motion to average out; higher is steadier but drifts",
+    )
+    zoom: Literal["auto", "keep"] = Field(
+        "auto",
+        description="auto: zoom in just enough to hide the wobbling border; "
+        "keep: do not crop, the border may show",
+    )
+
+
+@video_op(
+    name="video.stabilize",
+    version="1.0.0",
+    params=StabilizeParams,
+    description="smooth out shaky handheld footage",
+    hidden=True,  # catalogue budget (docs/08 Phase 6): the least common of the new video ops;
+    # still fully callable by name, and describe_op("video.stabilize") still works
+)
+def stabilize(g: Graph, p: StabilizeParams) -> None:
+    """Smooth out camera shake. `shakiness` says how much correction to look for (and costs
+    time: 10 analyzes much harder than 1), `smoothing` is how many seconds of motion are
+    averaged into each frame's correction (more is steadier but can drift on a slow pan).
+    `zoom: auto` (the default) zooms in a little, frame by frame, so the corrected edges never
+    show; `keep` does not crop at all, so a corrected frame's edge may wobble into view. This
+    is a full second pass over the video (an analysis decode before the real encode), so it
+    takes about twice as long as an op that only touches one pass."""
+    assert g.video is not None
+    if g.duration is not None and g.duration < 1.0:
+        raise OpError(f"the video is only {g.duration:.2f}s long: too short to analyze for shake")
+    trf = f"{g.label('vidstab')}.trf"
+    accuracy = min(15, p.shakiness + 5)
+    g.stabilize_detect(g.video, shakiness=p.shakiness, accuracy=accuracy, result=trf)
+    frames = max(0, round(p.smoothing * (g.fps or 30.0)))
+    args: dict[str, Any] = {"input": trf, "smoothing": frames}
+    if p.zoom == "auto":
+        args["optzoom"] = 2  # dynamic per-frame zoom: always just enough to hide the border
+    else:
+        args["optzoom"] = 0
+        args["crop"] = "keep"  # no cropping; the frame keeps its size, the border may show
+    g.vf("vidstabtransform", args)
+
+
+# -- auto_reframe --------------------------------------------------------------------------------
+
+TRACK_MAX_SECONDS = 600.0  # only a few dozen small frames are sampled, so length is cheap
+TRACK_SAMPLE_WIDTH = 160  # px; plenty to find roughly where the subject is
+TRACK_MAX_SAMPLES = 40  # caps both the sampling cost and the generated expression's size
+TRACK_MIN_INTERVAL = 0.2  # seconds; a floor on the sampling rate for very short clips
+
+
+class AutoReframeParams(Params):
+    aspect: Aspect = Field(description="target shape as W:H (9:16, 1:1, 16:9) or a number")
+    smoothing: float = Field(
+        1.0, ge=0.2, le=5, description="seconds of motion averaged into the camera's path"
+    )
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def _smooth_path(points: list[tuple[float, float]], window: int) -> list[tuple[float, float]]:
+    """A short centered moving average, so the crop does not jitter with every sample."""
+    n = len(points)
+    if n <= 2 or window <= 1:
+        return points
+    half = window // 2
+    out = []
+    for i in range(n):
+        lo, hi = max(0, i - half), min(n, i + half + 1)
+        xs = [points[j][0] for j in range(lo, hi)]
+        ys = [points[j][1] for j in range(lo, hi)]
+        out.append((sum(xs) / len(xs), sum(ys) / len(ys)))
+    return out
+
+
+def _piecewise_expr(times: Sequence[float], values: Sequence[float]) -> str:
+    """A time expression that linearly interpolates `values` at `times`, holding the first and
+    last value outside that range. Commas inside `if(...)` are plain; the graph's own escaper
+    (used wherever this string is handed to a filter option) backslash-escapes them."""
+    if len(times) == 1:
+        return num(values[0])
+    expr = num(values[-1])
+    for i in range(len(times) - 1, 0, -1):
+        t0, t1, v0, v1 = times[i - 1], times[i], values[i - 1], values[i]
+        if t1 - t0 < 1e-6:
+            seg = num(v1)
+        else:
+            slope = (v1 - v0) / (t1 - t0)
+            seg = f"({num(v0)}+{num(slope)}*(t-{num(t0)}))"
+        expr = f"if(lt(t,{num(t1)}),{seg},{expr})"
+    return f"if(lt(t,{num(times[0])}),{num(values[0])},{expr})"
+
+
+@video_op(
+    name="video.auto_reframe",
+    version="1.0.0",
+    params=AutoReframeParams,
+    description="crop to a new aspect, tracking the main subject",
+    also=("ml_runtime", "model_u2netp"),
+    determinism=Determinism.SEEDED_ML,
+)
+def auto_reframe(g: Graph, p: AutoReframeParams) -> None:
+    """Change the shape of the video to `aspect` like `video.reframe mode=fill`, but instead of
+    a fixed crop point, a small neural network finds the main subject every fraction of a
+    second and the crop follows it, smoothed over `smoothing` seconds so it pans instead of
+    jumping. Works best with one clear subject; a busy scene or a subject that already fills
+    the frame may not move the crop much. This samples the video once before the real encode,
+    at a low resolution, so it costs little beyond the sampling time itself regardless of the
+    video's length (up to the limit below)."""
+    from atelier.ml.segment import subject_mask
+
+    assert g.video is not None
+    if g.duration is None:
+        raise OpError("the video's length is not known here, so the subject cannot be tracked")
+    if g.duration > TRACK_MAX_SECONDS:
+        raise OpError(
+            f"video.auto_reframe is limited to {TRACK_MAX_SECONDS:g}s clips; this one is "
+            f"{g.duration:.1f}s (trim it first, then reframe)"
+        )
+    w, h, a = g.width, g.height, p.aspect
+    nw, nh = (_even(h * a), h) if w / h > a else (w, _even(w / a))
+    interval = max(TRACK_MIN_INTERVAL, g.duration / TRACK_MAX_SAMPLES)
+    sample_fps = 1.0 / interval
+    frames, fw, fh = g.sample_frames(g.video, fps=sample_fps, width=TRACK_SAMPLE_WIDTH)
+    if not frames:
+        raise OpError("could not sample any frames to find the subject to track")
+    centroids: list[tuple[float, float]] = []
+    for raw in frames:
+        mask = subject_mask(Image.frombytes("RGB", (fw, fh), raw))
+        arr = np.asarray(mask, dtype=np.float64)
+        total = float(arr.sum())
+        if total < 1.0:  # nothing salient found in this frame: hold the frame's center
+            centroids.append((0.5, 0.5))
+            continue
+        ys, xs = np.indices(arr.shape)
+        centroids.append(
+            (float((arr * xs).sum() / total) / fw, float((arr * ys).sum() / total) / fh)
+        )
+    times = [i / sample_fps for i in range(len(frames))]
+    window = max(1, round(p.smoothing * sample_fps))
+    centroids = _smooth_path(centroids, window)
+    xs_px = [_clamp(cx * w - nw / 2, 0, w - nw) for cx, _ in centroids]
+    ys_px = [_clamp(cy * h - nh / 2, 0, h - nh) for _, cy in centroids]
+    g.vf(
+        "crop",
+        {"w": nw, "h": nh, "x": _piecewise_expr(times, xs_px), "y": _piecewise_expr(times, ys_px)},
+    )
+    g.width, g.height = nw, nh

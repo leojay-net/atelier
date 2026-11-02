@@ -1,0 +1,11 @@
+id: watermark_batch
+version: 1
+description: watermark a photo with a logo and export it for the web
+params:
+  in:     {type: asset, media: image}
+  logo:   {type: asset, media: image}
+  style:  {type: preset, kind: watermark, default: corner_subtle}
+  format: {type: enum, values: [web_jpeg, web_webp, web_avif], default: web_jpeg}
+steps:
+  - {op: image.watermark, in: [in, logo], args: {preset: "{{style}}"}}
+  - {op: export, args: {preset: "{{format}}"}}

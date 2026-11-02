@@ -1,0 +1,10 @@
+id: podcast_clean
+version: 1
+description: clean up a spoken recording (background noise, dead air at the ends) and export it
+params:
+  in:      {type: asset, media: audio}
+  format:  {type: enum, values: [podcast_mp3, podcast_m4a, voice_opus, wav_master], default: podcast_mp3}
+steps:
+  - {op: audio.denoise, args: {}}
+  - {op: audio.silence, args: {where: edges}}
+  - {op: export, args: {preset: "{{format}}"}}

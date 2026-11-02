@@ -1,0 +1,13 @@
+id: social_clip
+version: 1
+description: cut a segment, make it vertical, export for Reels / TikTok / Shorts
+params:
+  in:        {type: asset, media: video}
+  start:     {type: timecode}
+  end:       {type: timecode}
+  platform:  {type: enum, values: [reels, tiktok, shorts], default: reels}
+  framing:   {type: enum, values: [fill, blur_pad], default: fill}
+steps:
+  - {op: video.trim, args: {start: "{{start}}", end: "{{end}}"}}
+  - {op: video.reframe, args: {aspect: "9:16", mode: "{{framing}}"}}
+  - {op: export, args: {preset: "{{platform}}_1080x1920"}}

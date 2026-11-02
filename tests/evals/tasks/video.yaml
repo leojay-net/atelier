@@ -1,0 +1,568 @@
+# Agent eval suite v1, video and audio: 40 tasks (docs/09-testing.md §9.4, Phase 3).
+#
+# Same shape as the image suite: 20 recipe-shaped (50%), 14 custom multi-step (35%),
+# 3 ambiguous + 3 aesthetic (15%). Splits: 22 train, 8 validation, 10 test; tuning may look at
+# train and validation only, test is the headline number.
+#
+# Every task that expects output carries a `reference` spec, and tests/unit/test_evals_video.py
+# runs each one through the engine (real ffmpeg) and requires every non-soft grader to pass.
+# Graders judge the delivered file with ffprobe/ebur128: kind, format, size, duration, sound,
+# picture, loudness. Inputs are synthetic (tests/evals/make_av_inputs.py):
+#   talk.mp4 12 s, talk_portrait.mp4 8 s, broll_a/b/c.mp4 5 s (b has no sound), quiet_talk.mp4 10 s,
+#   voice.wav 11 s (speech at 1.5-4.5 s and 7-9 s), noisy_voice.wav 10 s, music.m4a 20 s,
+#   captions.srt / captions.vtt (three cues over talk.mp4).
+
+# ---- recipe-shaped: vertical clips for Reels, TikTok and Shorts -------------------------
+- id: reel-talk-middle
+  split: train
+  kind: recipe
+  request: "Cut seconds 2 to 8 of this video into a Reel."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: video}
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 6}
+    - {type: sound, present: true}
+    - {type: format, formats: [MP4]}
+    - {type: loudness, min: -16, max: -12}
+    - {type: recipe, name: social_clip, soft: true}
+  reference: {recipe: social_clip, params: {in: "${video}", start: 2, end: 8, platform: reels}}
+
+- id: tiktok-from-vertical
+  split: train
+  kind: recipe
+  request: "Make a TikTok from the first 7 seconds of this vertical video."
+  inputs: {video: talk_portrait.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 7}
+    - {type: sound, present: true}
+    - {type: recipe, name: social_clip, soft: true}
+  reference: {recipe: social_clip, params: {in: "${video}", start: 0, end: 7, platform: tiktok}}
+
+- id: shorts-keep-everything
+  split: validation
+  kind: recipe
+  request: "Turn the first 10 seconds of this video into a YouTube Short, but don't crop anything off: fill the sides some other way."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 10}
+    - {type: step_arg, op: video.reframe, arg: mode, equals: blur_pad}
+  reference: {recipe: social_clip, params: {in: "${video}", start: 0, end: 10, platform: shorts, framing: blur_pad}}
+
+- id: reel-last-four
+  split: train
+  kind: recipe
+  request: "Make a Reel out of the last four seconds of the clip."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 4}
+    - {type: sound, present: true}
+  reference: {recipe: social_clip, params: {in: "${video}", start: 8, end: 12}}
+
+- id: tiktok-broll
+  split: train
+  kind: recipe
+  request: "I want the first 4 seconds of this footage as a TikTok."
+  inputs: {footage: broll_a.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 4}
+  reference: {recipe: social_clip, params: {in: "${footage}", start: 0, end: 4, platform: tiktok}}
+
+- id: shorts-portrait-source
+  split: test
+  kind: recipe
+  request: "YouTube Short from the first 5 seconds of my vertical clip."
+  inputs: {clip: talk_portrait.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 5}
+    - {type: sound, present: true}
+  reference: {recipe: social_clip, params: {in: "${clip}", start: 0, end: 5, platform: shorts}}
+
+- id: reel-quiet-source
+  split: test
+  kind: recipe
+  request: "Make a Reel from 1 to 9 seconds of this video. The sound in it is really low."
+  inputs: {video: quiet_talk.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 8}
+    - {type: loudness, min: -16, max: -12}
+  reference: {recipe: social_clip, params: {in: "${video}", start: 1, end: 9}}
+
+# ---- recipe-shaped: the sound of a video ------------------------------------------------
+- id: mp3-from-video
+  split: train
+  kind: recipe
+  request: "Give me just the audio of this video as an MP3."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [MP3]}
+    - {type: picture, present: false}
+    - {type: duration, seconds: 12}
+    - {type: recipe, name: extract_audio, soft: true}
+  reference: {recipe: extract_audio, params: {in: "${video}"}}
+
+- id: m4a-from-video
+  split: train
+  kind: recipe
+  request: "Extract the audio from this video as an M4A."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [M4A]}
+    - {type: duration, seconds: 12}
+  reference: {recipe: extract_audio, params: {in: "${video}", format: podcast_m4a}}
+
+- id: voice-memo-opus
+  split: train
+  kind: recipe
+  request: "Save the sound of this video as a small voice memo (Opus)."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [OGG]}
+    - {type: duration, seconds: 12}
+  reference: {recipe: extract_audio, params: {in: "${video}", format: voice_opus}}
+
+- id: wav-master-of-video
+  split: test
+  kind: recipe
+  request: "I need a lossless WAV of this video's sound for editing."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [WAV]}
+    - {type: duration, seconds: 12}
+  reference: {recipe: extract_audio, params: {in: "${video}", format: wav_master}}
+
+# ---- recipe-shaped: plain exports -------------------------------------------------------
+- id: web-mp4
+  split: train
+  kind: recipe
+  request: "Make a web-friendly MP4 of this video."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: video}
+    - {type: format, formats: [MP4]}
+    - {type: dims, width: 640, height: 360}
+    - {type: duration, seconds: 12}
+    - {type: sound, present: true}
+  reference: {in: "${video}", ops: [[export, {preset: web_h264}]]}
+
+- id: youtube-upload
+  split: validation
+  kind: recipe
+  request: "Export this video for uploading to YouTube."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: format, formats: [MP4]}
+    - {type: dims, width: 640, height: 360}
+    - {type: duration, seconds: 12}
+  reference: {in: "${video}", ops: [[export, {preset: youtube_1080p}]]}
+
+# ---- recipe-shaped: captions, cleaned-up audio, music -----------------------------------
+- id: captioned-reel-srt
+  split: train
+  kind: recipe
+  request: "Turn this video into a vertical Reel with the captions from the subtitle file burned in."
+  inputs: {video: talk.mp4, subtitles: captions.srt}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 12}
+    - {type: ops_include, ops: [video.captions]}
+    - {type: recipe, name: captioned_reel, soft: true}
+  reference: {recipe: captioned_reel, params: {in: "${video}", captions: "${subtitles}"}}
+
+- id: captioned-tiktok-vtt
+  split: validation
+  kind: recipe
+  request: "Make a TikTok of this talk with these captions on it."
+  inputs: {video: talk.mp4, subtitles: captions.vtt}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: ops_include, ops: [video.captions]}
+  reference: {recipe: captioned_reel, params: {in: "${video}", captions: "${subtitles}", platform: tiktok}}
+
+- id: captioned-short-bold
+  split: test
+  kind: recipe
+  request: "YouTube Short of this video with big, bold, eye-catching captions from the subtitle file."
+  inputs: {video: talk.mp4, subtitles: captions.srt}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: step_arg, op: video.captions, arg: style, equals: bold_pop}
+  reference: {recipe: captioned_reel, params: {in: "${video}", captions: "${subtitles}", platform: shorts, style: bold_pop}}
+
+- id: clean-podcast-mp3
+  split: train
+  kind: recipe
+  request: "There's hiss all over this voice recording. Clean it up and give me an MP3."
+  inputs: {recording: noisy_voice.wav}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [MP3]}
+    - {type: ops_include, ops: [audio.denoise]}
+    - {type: recipe, name: podcast_clean, soft: true}
+  reference: {recipe: podcast_clean, params: {in: "${recording}"}}
+
+- id: clean-podcast-opus
+  split: train
+  kind: recipe
+  request: "Tidy up this recording: take out the noise and the silence at the start and end. Opus, please."
+  inputs: {recording: voice.wav}
+  graders:
+    - {type: format, formats: [OGG]}
+    - {type: duration, max: 9}
+    - {type: ops_include, ops: [audio.silence]}
+  reference: {recipe: podcast_clean, params: {in: "${recording}", format: voice_opus}}
+
+- id: voiceover-under-music
+  split: test
+  kind: recipe
+  request: "Mix this music quietly under my voice recording and export an MP3. The music should get out of the way when I'm talking."
+  inputs: {voice: voice.wav, music: music.m4a}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [MP3]}
+    - {type: duration, seconds: 11}
+    - {type: ops_include, ops: [audio.mix]}
+    - {type: step_arg, op: audio.mix, arg: duck, equals: true, soft: true}
+  reference: {recipe: voiceover_music, params: {in: "${voice}", music: "${music}"}}
+
+- id: music-on-video
+  split: validation
+  kind: recipe
+  request: "Put this music on the video instead of its own sound."
+  inputs: {video: broll_a.mp4, music: music.m4a}
+  graders:
+    - {type: kind, is: video}
+    - {type: format, formats: [MP4]}
+    - {type: duration, seconds: 5}
+    - {type: sound, present: true}
+    - {type: ops_include, ops: [video.soundtrack]}
+  reference: {recipe: music_video, params: {in: "${video}", music: "${music}"}}
+
+# ---- custom, multi-step -----------------------------------------------------------------
+- id: join-two-clips
+  split: train
+  kind: custom
+  request: "Put the first clip and then the second clip one after the other, and export it for the web."
+  inputs: {first: broll_a.mp4, second: broll_c.mp4}
+  graders:
+    - {type: kind, is: video}
+    - {type: format, formats: [MP4]}
+    - {type: dims, width: 640, height: 360}
+    - {type: duration, seconds: 10}
+    - {type: ops_include, ops: [video.concat]}
+  reference:
+    inputs: {first: "${first}", second: "${second}"}
+    steps:
+      - {id: joined, op: video.concat, in: [first, second], args: {}}
+      - {id: out, op: export, in: joined, args: {preset: web_h264}}
+    outputs: [out]
+
+- id: join-three-dissolve
+  split: validation
+  kind: custom
+  request: "Join these three clips in this order with a half-second dissolve between them."
+  inputs: {one: broll_a.mp4, two: broll_b.mp4, three: broll_c.mp4}
+  graders:
+    - {type: kind, is: video}
+    - {type: duration, seconds: 14}
+    - {type: step_arg, op: video.concat, arg: fade, equals: 0.5}
+  reference:
+    inputs: {one: "${one}", two: "${two}", three: "${three}"}
+    steps:
+      - {id: joined, op: video.concat, in: [one, two, three], args: {fade: 0.5}}
+      - {id: out, op: export, in: joined, args: {preset: web_h264}}
+    outputs: [out]
+
+- id: double-speed
+  split: train
+  kind: custom
+  request: "Speed up seconds 2 to 6 of this video to double speed."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: duration, seconds: 2}
+    - {type: ops_include, ops: [video.trim, video.speed]}
+    - {type: step_arg, op: video.speed, arg: factor, equals: 2}
+  reference:
+    in: "${video}"
+    ops:
+      - [video.trim, {start: 2, end: 6}]
+      - [video.speed, {factor: 2}]
+      - [export, {preset: web_h264}]
+
+- id: logo-bug
+  split: train
+  kind: custom
+  request: "Put our logo in the bottom-right corner of the video, quite small."
+  inputs: {video: talk.mp4, logo: logo.png}
+  graders:
+    - {type: dims, width: 640, height: 360}
+    - {type: duration, seconds: 12}
+    - {type: step_arg, op: video.overlay, arg: anchor, equals: bottom_right}
+  reference:
+    inputs: {video: "${video}", logo: "${logo}"}
+    steps:
+      - {id: branded, op: video.overlay, in: [video, logo], args: {anchor: bottom_right, scale: 0.12}}
+      - {id: out, op: export, in: branded, args: {preset: web_h264}}
+    outputs: [out]
+
+- id: title-card-text
+  split: train
+  kind: custom
+  request: "Show the title 'Grand opening' near the top of the video for the first three seconds."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: duration, seconds: 12}
+    - {type: step_arg, op: video.text, arg: text, contains: "Grand opening"}
+    - {type: step_arg, op: video.text, arg: end, equals: 3}
+  reference:
+    in: "${video}"
+    ops:
+      - [video.text, {text: "Grand opening", position: top, start: 0, end: 3}]
+      - [export, {preset: web_h264}]
+
+- id: fade-in-and-out
+  split: test
+  kind: custom
+  request: "Fade the video in from black at the start and out to black at the end."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: duration, seconds: 12}
+    - {type: ops_include, ops: [video.fade]}
+  reference:
+    in: "${video}"
+    ops:
+      - [video.fade, {fade_in: 1, fade_out: 1}]
+      - [export, {preset: web_h264}]
+
+- id: photo-slideshow
+  split: train
+  kind: custom
+  request: "Make a slideshow from these four photos, three seconds each."
+  inputs: {a: landscape.jpg, b: portrait.jpg, c: wide.jpg, d: square.png}
+  graders:
+    - {type: kind, is: video}
+    - {type: duration, seconds: 12}
+    - {type: ops_include, ops: [video.slideshow]}
+  reference:
+    inputs: {a: "${a}", b: "${b}", c: "${c}", d: "${d}"}
+    steps:
+      - {id: show, op: video.slideshow, in: [a, b, c, d], args: {seconds: 3}}
+      - {id: out, op: export, in: show, args: {preset: web_h264}}
+    outputs: [out]
+
+- id: slideshow-with-music
+  split: validation
+  kind: custom
+  request: "Make a slideshow of these three photos, four seconds each, with the music playing behind it."
+  inputs: {one: shot1.jpg, two: shot2.jpg, three: shot3.jpg, music: music.m4a}
+  graders:
+    - {type: kind, is: video}
+    - {type: duration, seconds: 12}
+    - {type: sound, present: true}
+    - {type: ops_include, ops: [video.slideshow, video.soundtrack]}
+  reference:
+    inputs: {one: "${one}", two: "${two}", three: "${three}", music: "${music}"}
+    steps:
+      - {id: show, op: video.slideshow, in: [one, two, three], args: {seconds: 4}}
+      - {id: scored, op: video.soundtrack, in: [show, music], args: {}}
+      - {id: out, op: export, in: scored, args: {preset: web_h264}}
+    outputs: [out]
+
+- id: poster-frame
+  split: train
+  kind: custom
+  request: "Pull a poster image out of this video at the 5 second mark and save it as a JPEG, 1280 by 720."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: image}
+    - {type: format, formats: [JPEG]}
+    - {type: dims, width: 1280, height: 720}
+    - {type: ops_include, ops: [video.frame]}
+    - {type: step_arg, op: video.frame, arg: time, equals: 5}
+  reference:
+    in: "${video}"
+    ops:
+      - [video.frame, {time: 5}]
+      - [export, {preset: thumb_youtube}]
+
+- id: remove-sound
+  split: train
+  kind: custom
+  request: "Remove the sound from this video."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: kind, is: video}
+    - {type: sound, present: false}
+    - {type: duration, seconds: 12}
+    - {type: ops_include, ops: [video.mute]}
+  reference:
+    in: "${video}"
+    ops:
+      - [video.mute, {}]
+      - [export, {preset: web_h264}]
+
+- id: fix-quiet-video
+  split: test
+  kind: custom
+  request: "The sound in this video is way too quiet. Fix that and export it for the web."
+  inputs: {video: quiet_talk.mp4}
+  graders:
+    - {type: kind, is: video}
+    - {type: format, formats: [MP4]}
+    - {type: duration, seconds: 10}
+    - {type: loudness, min: -18, max: -14}
+  reference:
+    in: "${video}"
+    ops:
+      - [export, {preset: web_h264, overrides: {loudness: {target_lufs: -16.0, true_peak_db: -1.5}}}]
+
+- id: cut-dead-air
+  split: train
+  kind: custom
+  request: "Cut the dead air out of this recording: the quiet bits at the start and end and the long pause in the middle. MP3 please."
+  inputs: {recording: voice.wav}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [MP3]}
+    - {type: duration, max: 8.5}
+    - {type: step_arg, op: audio.silence, arg: where, equals: all}
+  reference:
+    in: "${recording}"
+    ops:
+      - [audio.silence, {where: all, min_pause: 0.5}]
+      - [export, {preset: podcast_mp3}]
+
+- id: black-and-white
+  split: train
+  kind: custom
+  request: "Make this video black and white."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: duration, seconds: 12}
+    - {type: sound, present: true}
+    - {type: step_arg, op: video.color, arg: saturation, equals: 0}
+  reference:
+    in: "${video}"
+    ops:
+      - [video.color, {saturation: 0}]
+      - [export, {preset: web_h264}]
+
+- id: two-clips-tiktok
+  split: test
+  kind: custom
+  request: "Join these two clips, first one and then the second, and make it a TikTok."
+  inputs: {first: broll_a.mp4, second: broll_c.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 10, tol: 0.5}
+    - {type: ops_include, ops: [video.concat]}
+  reference:
+    inputs: {first: "${first}", second: "${second}"}
+    steps:
+      - {id: joined, op: video.concat, in: [first, second], args: {}}
+      - {id: tall, op: video.reframe, in: joined, args: {aspect: "9:16", mode: fill}}
+      - {id: out, op: export, in: tall, args: {preset: tiktok_1080x1920}}
+    outputs: [out]
+
+# ---- ambiguous: the right move is a question --------------------------------------------
+- id: ask-shorter
+  split: train
+  kind: ambiguous
+  request: "Make this video shorter."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: asks_question}
+
+- id: ask-social
+  split: validation
+  kind: ambiguous
+  request: "Get this ready for social media."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: asks_question}
+
+- id: ask-captions
+  split: test
+  kind: ambiguous
+  request: "Add captions to this video."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: asks_question}
+
+# ---- aesthetic: judged by checks + a rubric ---------------------------------------------
+- id: punchy-teaser
+  split: train
+  kind: aesthetic
+  request: "Make a punchy 8-second teaser of this video for Instagram with a bold title saying 'Coming soon'."
+  inputs: {video: talk.mp4}
+  graders:
+    - {type: dims, width: 1080, height: 1920}
+    - {type: duration, seconds: 8}
+    - {type: step_arg, op: video.text, arg: text, contains: "Coming soon"}
+  rubric:
+    - "The teaser is vertical and about 8 seconds long."
+    - "The title is large, bold and easy to read."
+    - "The title stays clear of the top and bottom edges where Instagram draws its interface."
+    - "The title appears near the start and does not cover the whole video."
+  reference:
+    in: "${video}"
+    ops:
+      - [video.trim, {start: 0, end: 8}]
+      - [video.reframe, {aspect: "9:16", mode: fill}]
+      - [video.text, {text: "Coming soon", style: bold_pop, position: upper_safe, start: 0.3, end: 4}]
+      - [export, {preset: reels_1080x1920}]
+
+- id: calm-slideshow
+  split: validation
+  kind: aesthetic
+  request: "Make a calm, slow slideshow from these photos with gentle transitions and the music underneath."
+  inputs: {one: shot1.jpg, two: shot2.jpg, three: shot3.jpg, music: music.m4a}
+  graders:
+    - {type: kind, is: video}
+    - {type: duration, min: 9}
+    - {type: sound, present: true}
+    - {type: ops_include, ops: [video.slideshow, video.soundtrack]}
+  rubric:
+    - "Pictures dissolve into each other instead of cutting."
+    - "Each picture stays on screen long enough to look at (about three seconds or more)."
+    - "Music plays underneath and fades out at the end."
+    - "No text or extra graphics were added."
+  reference:
+    inputs: {one: "${one}", two: "${two}", three: "${three}", music: "${music}"}
+    steps:
+      - {id: show, op: video.slideshow, in: [one, two, three], args: {seconds: 4, fade: 1}}
+      - {id: scored, op: video.soundtrack, in: [show, music], args: {fade_out: 2}}
+      - {id: out, op: export, in: scored, args: {preset: web_h264}}
+    outputs: [out]
+
+- id: podcast-intro
+  split: test
+  kind: aesthetic
+  request: "Make a podcast intro: my voice over the music, with the music fading out at the end. MP3."
+  inputs: {voice: voice.wav, music: music.m4a}
+  graders:
+    - {type: kind, is: audio}
+    - {type: format, formats: [MP3]}
+    - {type: duration, min: 10}
+    - {type: ops_include, ops: [audio.mix, audio.fade]}
+  rubric:
+    - "The music is audibly lower than the voice while the voice is speaking."
+    - "The music does not stop abruptly: it fades out."
+    - "The voice is left whole (nothing was cut from it)."
+  reference:
+    inputs: {voice: "${voice}", music: "${music}"}
+    steps:
+      - {id: mixed, op: audio.mix, in: [voice, music], args: {}}
+      - {id: faded, op: audio.fade, in: mixed, args: {fade_out: 2}}
+      - {id: out, op: export, in: faded, args: {preset: podcast_mp3}}
+    outputs: [out]

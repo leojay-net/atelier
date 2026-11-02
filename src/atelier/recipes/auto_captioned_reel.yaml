@@ -1,0 +1,13 @@
+id: auto_captioned_reel
+version: 1
+description: make a video vertical for Reels / TikTok / Shorts and caption it from its own speech (no caption file needed)
+params:
+  in:        {type: asset, media: video}
+  platform:  {type: enum, values: [reels, tiktok, shorts], default: reels}
+  framing:   {type: enum, values: [fill, blur_pad], default: fill}
+  style:     {type: enum, values: [clean, bold_pop, minimal_lower], default: clean}
+steps:
+  - {id: framed, op: video.reframe, in: [in], args: {aspect: "9:16", mode: "{{framing}}"}}
+  - {id: words, op: transcribe, in: [in], args: {}}
+  - {op: video.captions, in: [framed, words], args: {style: "{{style}}", position: lower_safe}}
+  - {op: export, args: {preset: "{{platform}}_1080x1920"}}

@@ -1,0 +1,13 @@
+id: report_docx_to_pdf
+version: 1
+description: turn a Word report into a PDF, optionally with page numbers
+params:
+  in:            {type: asset, media: docx}
+  page_numbers:  {type: bool, default: true}
+  preset:        {type: preset, kind: export.pdf, default: pdf_print}
+steps:
+  - {op: doc.convert, args: {}}
+  - when: page_numbers
+    op: pdf.stamp
+    args: {text: "{page} / {pages}", position: bottom_center, size: 9}
+  - {op: export, args: {preset: "{{preset}}"}}

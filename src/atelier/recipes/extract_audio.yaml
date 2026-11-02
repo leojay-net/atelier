@@ -1,0 +1,9 @@
+id: extract_audio
+version: 1
+description: pull the sound out of a video and export it as audio
+params:
+  in:      {type: asset, media: video}
+  format:  {type: enum, values: [podcast_mp3, podcast_m4a, voice_opus, wav_master], default: podcast_mp3}
+steps:
+  - {op: audio.extract, args: {}}
+  - {op: export, args: {preset: "{{format}}"}}

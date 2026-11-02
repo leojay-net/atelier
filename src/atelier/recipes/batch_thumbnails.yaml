@@ -1,0 +1,24 @@
+id: batch_thumbnails
+version: 2
+description: thumbnail or link card from a photo, with an optional title
+params:
+  in:    {type: asset, media: image}
+  size:  {type: enum, values: [thumb_youtube, og_image], default: thumb_youtube}
+  title: {type: str, default: ""}
+steps:
+  # With a title, crop to the preset's aspect first so the text is laid out in the final
+  # frame: placed before the preset's own fill-crop, its position depended on the photo's
+  # shape and left the safe area on most photos. (v1 failed 11 of 16 size x aspect cases.)
+  # 40:21 is og_image's 1200x630; keep these in step with the presets.
+  - when: ["title != ''", "size == 'og_image'"]
+    op: image.crop
+    args: {aspect: "40:21", focus: attention}
+  - when: ["title != ''", "size == 'thumb_youtube'"]
+    op: image.crop
+    args: {aspect: "16:9", focus: attention}
+  - when: "title != ''"
+    op: image.text
+    # Inside both presets' safe areas, in final-frame coordinates.
+    args: {text: "{{title}}", box: [0.1, 0.12, 0.62, 0.45], align: left, valign: top,
+           stroke: 0.05, background: auto}
+  - {op: export, args: {preset: "{{size}}"}}

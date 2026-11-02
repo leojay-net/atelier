@@ -1,0 +1,12 @@
+id: print_300dpi
+version: 1
+kind: export.image
+description: Print master, LZW TIFF at 300 dpi, sRGB, no alpha
+settings:
+  format: tiff
+  compression: lzw
+  dpi: 300
+  alpha: false
+  background: "#ffffff"
+  icc: srgb
+  checks: [color_profile]

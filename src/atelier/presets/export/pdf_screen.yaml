@@ -1,0 +1,9 @@
+id: pdf_screen
+version: 1
+kind: export.pdf
+description: "PDF for screens and email: pictures recompressed to 1600 px, fast web view"
+settings:
+  compress: true
+  quality: 70
+  max_side: 1600
+  linearize: true

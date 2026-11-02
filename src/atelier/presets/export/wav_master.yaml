@@ -1,0 +1,8 @@
+id: wav_master
+version: 1
+kind: export.audio
+description: "WAV master: 24-bit PCM, 48 kHz stereo, no loudness change"
+settings:
+  format: wav
+  sample_rate: 48000
+  channels: 2

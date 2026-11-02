@@ -1,0 +1,5 @@
+id: pptx_clean
+version: 1
+kind: export.pptx
+description: "PowerPoint file: normalized properties, deterministic package"
+settings: {}

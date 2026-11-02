@@ -1,0 +1,11 @@
+id: podcast_mp3
+version: 1
+kind: export.audio
+description: "Podcast MP3: 128 kbps, 44.1 kHz stereo, -16 LUFS"
+settings:
+  format: mp3
+  bitrate: 128k
+  sample_rate: 44100
+  channels: 2
+  loudness: {target_lufs: -16, true_peak_db: -1.0}
+  checks: [dead_air]

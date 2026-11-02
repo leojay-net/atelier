@@ -1,0 +1,11 @@
+id: contract_redact_and_stamp
+version: 1
+description: remove names and numbers from a PDF for good, then stamp every page with a label
+params:
+  in:      {type: asset, media: pdf}
+  terms:   {type: list}
+  label:   {type: str, default: "CONFIDENTIAL {bates}"}
+steps:
+  - {op: pdf.redact, args: {terms: "{{terms}}"}}
+  - {op: pdf.stamp, args: {text: "{{label}}", position: bottom_right, size: 9}}
+  - {op: export, args: {preset: pdf_screen}}

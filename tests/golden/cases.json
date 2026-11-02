@@ -1,0 +1,834 @@
+[
+  {
+    "name": "upper_then_join",
+    "fixtures": {
+      "a": "hello.txt",
+      "b": "world.txt"
+    },
+    "spec": {
+      "version": 1,
+      "inputs": {
+        "a": "$a",
+        "b": "$b"
+      },
+      "steps": [
+        {
+          "id": "up",
+          "op": "debug.upper",
+          "in": "a"
+        },
+        {
+          "id": "out",
+          "op": "debug.join",
+          "in": [
+            "up",
+            "b"
+          ],
+          "args": {
+            "sep": "-"
+          }
+        }
+      ],
+      "outputs": [
+        "out"
+      ]
+    },
+    "ops": {
+      "debug.join": "1.0.0",
+      "debug.upper": "1.0.0"
+    },
+    "outputs": {
+      "out": "8ac7528d05e0d9d64cd79254005b5208fb471ead724ab3fdc7bc1bae70a585ac"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "crop_attention",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.crop",
+          {
+            "aspect": "4:5",
+            "focus": "attention"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.crop": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:e079065188a3dd7c568cfad25a9963b8209d84d6e81703e6c46d8edeae0f1b2f"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "crop_box",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.crop",
+          {
+            "box": [
+              0.1,
+              0.2,
+              0.5,
+              0.5
+            ]
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.crop": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:9897a2cd035f8b268fae596eb0d03ef5702bb7ad6fcc8687ab4d3e7c24cde173"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "resize_fill",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.resize",
+          {
+            "width": 300,
+            "height": 200,
+            "mode": "fill"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.resize": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:ea0e61596e1bee44b6f29e0500a5e19dd628e455325b2b80e1970aa0ef3f5e9d"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "resize_bicubic_scale",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.resize",
+          {
+            "scale": 0.37,
+            "filter": "bicubic"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.resize": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:48396ca73a89ef43b9d4db2cd820d9262740f4d7f06d99c30a31ab5666243507"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "pad_blur",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.pad",
+          {
+            "aspect": "9:16",
+            "fill": "blur"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.pad": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:e8c6179fedfa242a5d750aded68cf3e978056da436faa04015b0d3df0d32c78e"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "pad_mirror",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.pad",
+          {
+            "margin": 0.15,
+            "fill": "mirror",
+            "anchor": "top_left"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.pad": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:0e7dac6c612282de3711aafc387be43d13e69336a73661b1a1089b006365d804"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "rotate_15",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.rotate",
+          {
+            "degrees": 15
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.rotate": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:dedb6ec61e2d9eab2d9a97d12a9ab5eb1fce7bfe78f7584b06a856893f37ce7b"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "rotate_90",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.rotate",
+          {
+            "degrees": 90
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.rotate": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:0fbafbd0cb08f5c22b4eb1df410b038db550558e38b6399155eac0f41b323a63"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "flip_vertical",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.flip",
+          {
+            "direction": "vertical"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.flip": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:45e39d390576e2b7e1a558939abe1735728f2bc8a16249cd91aef874c95b84ba"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "adjust_all",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.adjust",
+          {
+            "brightness": 1.1,
+            "contrast": 1.2,
+            "saturation": 0.8,
+            "gamma": 1.3,
+            "temperature": 0.4,
+            "black": 0.05,
+            "white": 0.95
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.adjust": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:35a4ee918b4c098c671e8b2100323b7455d9a10f07d710f7192e291d19c1800f"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "convert_grayscale",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.convert",
+          {
+            "mode": "grayscale"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.convert": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:1c4cf6e73829dba363eb2937068726b75ed409d91aa6b80c556b4cb388281bfb"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "convert_flatten",
+    "fixtures": {
+      "p": "logo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.convert",
+          {
+            "alpha": "flatten",
+            "background": "#203040"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.convert": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:f448475b9a287fd239997b121e5b2dbf5a571403e05a68c892de264d3a4e5805"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "composite_multiply",
+    "fixtures": {
+      "p": "photo.png",
+      "l": "logo.png"
+    },
+    "spec": {
+      "inputs": {
+        "p": "$p",
+        "l": "$l"
+      },
+      "steps": [
+        {
+          "id": "c",
+          "op": "image.composite",
+          "in": [
+            "p",
+            "l"
+          ],
+          "args": {
+            "anchor": "center",
+            "scale": 0.4,
+            "blend": "multiply",
+            "opacity": 0.8
+          }
+        }
+      ],
+      "outputs": [
+        "c"
+      ]
+    },
+    "ops": {
+      "image.composite": "1.0.0"
+    },
+    "outputs": {
+      "c": "px:6144aba320bd1d7eabcc71de645748a04f48de9c4c5b18501f4d9d9ce734532a"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "text_stroke_shadow",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.text",
+          {
+            "text": "Golden hour",
+            "box": [
+              0.08,
+              0.08,
+              0.6,
+              0.3
+            ],
+            "align": "left",
+            "stroke": 0.05,
+            "shadow": true
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.text": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:851164b300d545c7d4a91617802d0df5ac351fe590caf232455ee68d754a64f4"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "text_autofit_plate",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.text",
+          {
+            "text": "A longer headline that must wrap onto lines",
+            "box": [
+              0.1,
+              0.55,
+              0.8,
+              0.35
+            ],
+            "color": "#ffffff",
+            "background": "auto",
+            "font": "Noto Serif",
+            "weight": "bold"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.text": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:b931ead7b228aeaec58effcf354510abb857bd93683839f8c276df6c7954f78e"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "watermark_text_tiled",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.watermark",
+          {
+            "preset": "tiled_proof",
+            "text": "PROOF"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "image.watermark": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:d7b413cd9bea78711185182fd49f11196fe1f2f2c001282fc1d1a09956986eff"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "watermark_logo",
+    "fixtures": {
+      "p": "photo.png",
+      "l": "logo.png"
+    },
+    "spec": {
+      "inputs": {
+        "p": "$p",
+        "l": "$l"
+      },
+      "steps": [
+        {
+          "id": "w",
+          "op": "image.watermark",
+          "in": [
+            "p",
+            "l"
+          ],
+          "args": {
+            "preset": "corner_subtle"
+          }
+        }
+      ],
+      "outputs": [
+        "w"
+      ]
+    },
+    "ops": {
+      "image.watermark": "1.0.0"
+    },
+    "outputs": {
+      "w": "px:9dd55693aea61946a17b545d3fab128b1e2d7db98a4d9cd12a29e7c328df4ffa"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "grid_labels",
+    "fixtures": {
+      "p": "photo.png",
+      "l": "logo.png"
+    },
+    "spec": {
+      "inputs": {
+        "p": "$p",
+        "l": "$l"
+      },
+      "steps": [
+        {
+          "id": "g",
+          "op": "image.grid",
+          "in": [
+            "p",
+            "l",
+            "p"
+          ],
+          "args": {
+            "columns": 3,
+            "cell_width": 160,
+            "labels": [
+              "a",
+              "b",
+              "c"
+            ]
+          }
+        }
+      ],
+      "outputs": [
+        "g"
+      ]
+    },
+    "ops": {
+      "image.grid": "1.0.0"
+    },
+    "outputs": {
+      "g": "px:42f298a4535cb3315239c97c0e2c5d4c68e6e3e2fe238f0c8d1ca4d0ce6e7706"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "export_png",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.text",
+          {
+            "text": "Golden hour",
+            "box": [
+              0.08,
+              0.08,
+              0.6,
+              0.3
+            ],
+            "align": "left",
+            "stroke": 0.05,
+            "shadow": true
+          }
+        ],
+        [
+          "export",
+          {
+            "preset": "transparent_png"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "export": "1.0.0",
+      "image.text": "1.0.0"
+    },
+    "outputs": {
+      "s2": "px:851164b300d545c7d4a91617802d0df5ac351fe590caf232455ee68d754a64f4"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "export_tiff",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "export",
+          {
+            "preset": "print_300dpi"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "export": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:ae06022e43cb4881755b6b28f8ccffae79559423a92accc700d5fadceb6668f9"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "export_og_jpeg",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "image.text",
+          {
+            "text": "Golden hour",
+            "box": [
+              0.08,
+              0.08,
+              0.6,
+              0.3
+            ],
+            "align": "left",
+            "stroke": 0.05,
+            "shadow": true
+          }
+        ],
+        [
+          "export",
+          {
+            "preset": "og_image"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "export": "1.0.0",
+      "image.text": "1.0.0"
+    },
+    "outputs": {
+      "s2": "px:efeb6976eae22107c573972d5dea9f5d85d29fa26d8b1e6d7b1aef6aa9269373"
+    },
+    "reference_only": true
+  },
+  {
+    "name": "export_webp",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "export",
+          {
+            "preset": "web_webp"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "export": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:b63e313ccaa5beb1579e4c86a1397c1abb36edd26da3d517cd285a8371fc42d4"
+    },
+    "reference_only": true
+  },
+  {
+    "name": "export_avif",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "export",
+          {
+            "preset": "web_avif"
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "export": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:4d24345626684e0c374aeae799f82890f1b5c982df3d7a4d1a89d1b62f56eff2"
+    },
+    "reference_only": true
+  },
+  {
+    "name": "preview_thumb",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "preview.thumb",
+          {
+            "long_edge": 256
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "preview.thumb": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:d173a445ed34403241e53fec40b5b213486a49507cb42925f62ec96437b44e0d"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "preview_crop",
+    "fixtures": {
+      "p": "photo.png"
+    },
+    "spec": {
+      "in": "$p",
+      "ops": [
+        [
+          "preview.crop",
+          {
+            "region": [
+              0.5,
+              0.2,
+              0.4,
+              0.5
+            ]
+          }
+        ]
+      ]
+    },
+    "ops": {
+      "preview.crop": "1.0.0"
+    },
+    "outputs": {
+      "s1": "px:561c95eca24649744a7ad8fe8e65c22b182140f51f908e4368cc85ea74652b9b"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "preview_compare",
+    "fixtures": {
+      "p": "photo.png",
+      "l": "logo.png"
+    },
+    "spec": {
+      "inputs": {
+        "p": "$p",
+        "l": "$l"
+      },
+      "steps": [
+        {
+          "id": "c",
+          "op": "preview.compare",
+          "in": [
+            "p",
+            "l"
+          ]
+        }
+      ],
+      "outputs": [
+        "c"
+      ]
+    },
+    "ops": {
+      "preview.compare": "1.0.0"
+    },
+    "outputs": {
+      "c": "px:b56fa6cec484f730268cea1c44465f51051f29b8d6f9412eb3ca2fa168ba5042"
+    },
+    "reference_only": false
+  },
+  {
+    "name": "preview_sheet",
+    "fixtures": {
+      "p": "photo.png",
+      "l": "logo.png"
+    },
+    "spec": {
+      "inputs": {
+        "p": "$p",
+        "l": "$l"
+      },
+      "steps": [
+        {
+          "id": "s",
+          "op": "preview.sheet",
+          "in": [
+            "p",
+            "l",
+            "p"
+          ]
+        }
+      ],
+      "outputs": [
+        "s"
+      ]
+    },
+    "ops": {
+      "preview.sheet": "1.0.0"
+    },
+    "outputs": {
+      "s": "px:1834f46b1a5b43041a95ffcaa049b3828b361d3ac53142fcf444839357a24518"
+    },
+    "reference_only": false
+  }
+]

@@ -1,0 +1,15 @@
+id: web_avif
+version: 1
+kind: export.image
+description: AVIF for the web; long edge ≤ 2560, keeps alpha, ≤ 300 KB
+settings:
+  format: avif
+  quality: 60
+  min_quality: 35
+  speed: 6
+  subsampling: "4:2:0"
+  alpha: true
+  icc: srgb
+  size: {width: 2560, height: 2560, mode: max}
+  max_bytes: 307200
+  checks: [dimensions, file_size_budget, color_profile]

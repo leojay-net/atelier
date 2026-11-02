@@ -1,0 +1,485 @@
+# Agent eval suite v1: 40 image tasks (docs/09-testing.md §9.4).
+#
+# Mix: 20 recipe-shaped (50%), 14 custom multi-step (35%), 6 ambiguous/aesthetic (15%).
+# Splits: 22 train, 8 validation, 10 test. Prompt/catalogue tuning may look at train and
+# validation only; test is the headline number and the Phase 2 gate.
+#
+# Every task that expects output carries a `reference` spec. tests/unit/test_evals_tasks.py
+# runs each reference through the engine and requires every non-soft grader to pass, so an
+# unsolvable task or an unsatisfiable grader fails the build, not the (expensive) live run.
+# Quote aspect ratios: an unquoted 1:1 is an integer in YAML.
+
+# ---- recipe-shaped: link-preview cards (og_image) ---------------------------------------
+- id: og-card-title-landscape
+  split: train
+  kind: recipe
+  request: "Make a link-preview card from this photo, titled 'Launch day'."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: dims, width: 1200, height: 630}
+    - {type: format, formats: [JPEG]}
+    - {type: step_arg, op: image.text, arg: text, contains: "Launch day"}
+    - {type: recipe, name: batch_thumbnails, soft: true}
+  reference: {recipe: batch_thumbnails, params: {in: "${photo}", size: og_image, title: "Launch day"}}
+
+- id: og-card-title-portrait
+  split: test
+  kind: recipe
+  request: "Link preview image for our blog post 'Why we moved to Postgres'. The photo is attached."
+  inputs: {photo: portrait.jpg}
+  graders:
+    - {type: dims, width: 1200, height: 630}
+    - {type: format, formats: [JPEG]}
+    - {type: step_arg, op: image.text, arg: text, contains: "Why we moved to Postgres"}
+    - {type: recipe, name: batch_thumbnails, soft: true}
+  reference: {recipe: batch_thumbnails, params: {in: "${photo}", size: og_image, title: "Why we moved to Postgres"}}
+
+- id: og-card-no-title
+  split: train
+  kind: recipe
+  request: "Turn this photo into an Open Graph image."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: dims, width: 1200, height: 630}
+    - {type: format, formats: [JPEG]}
+    - {type: ops_exclude, ops: [image.text]}
+  reference: {recipe: batch_thumbnails, params: {in: "${photo}", size: og_image}}
+
+- id: og-card-screenshot
+  split: validation
+  kind: recipe
+  request: "Use this screenshot as the link preview card for the release post, title 'v2.0 released'."
+  inputs: {shot: screenshot.png}
+  graders:
+    - {type: dims, width: 1200, height: 630}
+    - {type: format, formats: [JPEG]}
+    - {type: step_arg, op: image.text, arg: text, contains: "v2.0 released"}
+  reference: {recipe: batch_thumbnails, params: {in: "${shot}", size: og_image, title: "v2.0 released"}}
+
+# ---- recipe-shaped: YouTube thumbnails --------------------------------------------------
+- id: yt-thumb-title-landscape
+  split: train
+  kind: recipe
+  request: "YouTube thumbnail from this photo with the title 'I built a robot'."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: dims, width: 1280, height: 720}
+    - {type: format, formats: [JPEG]}
+    - {type: step_arg, op: image.text, arg: text, contains: "I built a robot"}
+    - {type: recipe, name: batch_thumbnails, soft: true}
+  reference: {recipe: batch_thumbnails, params: {in: "${photo}", size: thumb_youtube, title: "I built a robot"}}
+
+- id: yt-thumb-title-square
+  split: test
+  kind: recipe
+  request: "Make a YouTube thumbnail out of this square photo. Title: 'Top 5 mistakes'."
+  inputs: {photo: square.png}
+  graders:
+    - {type: dims, width: 1280, height: 720}
+    - {type: format, formats: [JPEG]}
+    - {type: step_arg, op: image.text, arg: text, contains: "Top 5 mistakes"}
+    - {type: recipe, name: batch_thumbnails, soft: true}
+  reference: {recipe: batch_thumbnails, params: {in: "${photo}", size: thumb_youtube, title: "Top 5 mistakes"}}
+
+- id: yt-thumb-no-title
+  split: train
+  kind: recipe
+  request: "Just make this into a YouTube-sized thumbnail, no text."
+  inputs: {photo: wide.jpg}
+  graders:
+    - {type: dims, width: 1280, height: 720}
+    - {type: format, formats: [JPEG]}
+    - {type: ops_exclude, ops: [image.text]}
+  reference: {recipe: batch_thumbnails, params: {in: "${photo}", size: thumb_youtube}}
+
+# ---- recipe-shaped: watermarking --------------------------------------------------------
+- id: wm-corner-subtle-jpeg
+  split: train
+  kind: recipe
+  request: "Watermark this photo with our logo, subtle in the corner, for the web."
+  inputs: {photo: landscape.jpg, logo: logo.png}
+  graders:
+    - {type: format, formats: [JPEG]}
+    - {type: dims, width: 1200, height: 800}
+    - {type: recipe, name: watermark_batch, soft: true}
+  reference: {recipe: watermark_batch, params: {in: "${photo}", logo: "${logo}", style: corner_subtle, format: web_jpeg}}
+
+- id: wm-center-large-webp
+  split: validation
+  kind: recipe
+  request: "Put our logo big and faint in the center of the photo, and give me a WebP."
+  inputs: {photo: landscape.jpg, logo: logo.png}
+  graders:
+    - {type: format, formats: [WEBP]}
+    - {type: dims, width: 1200, height: 800}
+    - {type: recipe, name: watermark_batch, soft: true}
+  reference: {recipe: watermark_batch, params: {in: "${photo}", logo: "${logo}", style: center_large, format: web_webp}}
+
+- id: wm-corner-bold-avif
+  split: train
+  kind: recipe
+  request: "Use the bold corner watermark with our logo on this photo and export it as AVIF."
+  inputs: {photo: wide.jpg, logo: logo.png}
+  graders:
+    - {type: format, formats: [AVIF]}
+    - {type: dims, width: 1600, height: 700}
+    - {type: recipe, name: watermark_batch, soft: true}
+  reference: {recipe: watermark_batch, params: {in: "${photo}", logo: "${logo}", style: corner_bold, format: web_avif}}
+
+- id: wm-tiled-proof
+  split: test
+  kind: recipe
+  request: "This is a client proof: tile our logo across the whole photo so it can't be reused. JPEG please."
+  inputs: {photo: landscape.jpg, logo: logo.png}
+  graders:
+    - {type: format, formats: [JPEG]}
+    - {type: dims, width: 1200, height: 800}
+    - {type: recipe, name: watermark_batch, soft: true}
+  reference: {recipe: watermark_batch, params: {in: "${photo}", logo: "${logo}", style: tiled_proof, format: web_jpeg}}
+
+- id: wm-portrait-dark-logo
+  split: train
+  kind: recipe
+  request: "Add our logo to the corner of this portrait photo for the site."
+  inputs: {photo: portrait.jpg, logo: logo_dark.png}
+  graders:
+    - {type: dims, width: 800, height: 1200}
+    - {type: recipe, name: watermark_batch, soft: true}
+  reference: {recipe: watermark_batch, params: {in: "${photo}", logo: "${logo}"}}
+
+# ---- recipe-shaped: plain exports (presets) ---------------------------------------------
+- id: web-jpeg-landscape
+  split: train
+  kind: recipe
+  request: "Optimize this photo for the website as a JPEG."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: format, formats: [JPEG]}
+    - {type: max_bytes, bytes: 500000}
+  reference: {in: "${photo}", ops: [[export, {preset: web_jpeg}]]}
+
+- id: web-webp-wide
+  split: validation
+  kind: recipe
+  request: "Convert the wide banner to WebP for the web."
+  inputs: {banner: wide.jpg}
+  graders:
+    - {type: format, formats: [WEBP]}
+    - {type: dims, width: 1600, height: 700}
+  reference: {in: "${banner}", ops: [[export, {preset: web_webp}]]}
+
+- id: web-avif-square
+  split: train
+  kind: recipe
+  request: "AVIF version of this photo for the web."
+  inputs: {photo: square.png}
+  graders:
+    - {type: format, formats: [AVIF]}
+    - {type: dims, width: 1000, height: 1000}
+  reference: {in: "${photo}", ops: [[export, {preset: web_avif}]]}
+
+- id: png-logo-transparent
+  split: test
+  kind: recipe
+  request: "Export the logo as a PNG that keeps its transparency."
+  inputs: {logo: logo.png}
+  graders:
+    - {type: format, formats: [PNG]}
+    - {type: alpha, present: true}
+  reference: {in: "${logo}", ops: [[export, {preset: transparent_png}]]}
+
+- id: png-product-transparent
+  split: train
+  kind: recipe
+  request: "Save the product cutout as a transparent PNG."
+  inputs: {product: product.png}
+  graders:
+    - {type: format, formats: [PNG]}
+    - {type: alpha, present: true}
+    - {type: dims, width: 900, height: 900}
+  reference: {in: "${product}", ops: [[export, {preset: transparent_png}]]}
+
+- id: print-master
+  split: validation
+  kind: recipe
+  request: "Make a print-ready master of this photo at 300 dpi."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: format, formats: [TIFF]}
+  reference: {in: "${photo}", ops: [[export, {preset: print_300dpi}]]}
+
+- id: web-jpeg-phone-photo
+  split: test
+  kind: recipe
+  request: "Prep this phone photo for the web."
+  inputs: {photo: phone.jpg}
+  graders:
+    - {type: format, formats: [JPEG]}
+    - {type: dims, orientation: portrait}
+  reference: {in: "${photo}", ops: [[export, {preset: web_jpeg}]]}
+
+- id: web-jpeg-tiny
+  split: train
+  kind: recipe
+  request: "Export this small image for the web."
+  inputs: {img: tiny.png}
+  graders:
+    - {type: format, formats: [JPEG]}
+  reference: {in: "${img}", ops: [[export, {preset: web_jpeg}]]}
+
+# ---- custom multi-step ------------------------------------------------------------------
+- id: square-caption-1080
+  split: train
+  kind: custom
+  request: "Make a 1080x1080 square of this photo with the caption 'Summer sale' along the bottom."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: dims, width: 1080, height: 1080}
+    - {type: step_arg, op: image.text, arg: text, contains: "Summer sale"}
+  reference:
+    in: "${photo}"
+    ops:
+      - [image.crop, {aspect: "1:1", focus: attention}]
+      - [image.resize, {width: 1080}]
+      - [image.text, {text: "Summer sale", valign: bottom, box: [0.05, 0.7, 0.9, 0.25]}]
+      - [export, {preset: web_jpeg}]
+
+- id: rotate-clockwise-png
+  split: train
+  kind: custom
+  request: "Rotate this photo 90 degrees clockwise and save it as a PNG."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: dims, width: 800, height: 1200}
+    - {type: format, formats: [PNG]}
+    - {type: ops_include, ops: [image.rotate]}
+  reference: {in: "${photo}", ops: [[image.rotate, {degrees: 90}], [export, {preset: transparent_png}]]}
+
+- id: mirror-webp
+  split: train
+  kind: custom
+  request: "Mirror this photo left to right and give me a WebP."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: format, formats: [WEBP]}
+    - {type: step_arg, op: image.flip, arg: direction, equals: horizontal}
+  reference: {in: "${photo}", ops: [[image.flip, {direction: horizontal}], [export, {preset: web_webp}]]}
+
+- id: brighten-for-web
+  split: train
+  kind: custom
+  request: "This photo is too dark. Brighten it and boost the contrast a bit, then export it for the web."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: ops_include, ops: [image.adjust]}
+    - {type: format, formats: [JPEG, WEBP]}
+  reference: {in: "${photo}", ops: [[image.adjust, {brightness: 1.2, contrast: 1.1}], [export, {preset: web_jpeg}]]}
+
+- id: pad-16-9-blur
+  split: test
+  kind: custom
+  request: "Put this portrait photo on a 16:9 canvas with a blurred background instead of bars."
+  inputs: {photo: portrait.jpg}
+  graders:
+    - {type: dims, aspect: [16, 9]}
+    - {type: step_arg, op: image.pad, arg: fill, equals: blur}
+  reference: {in: "${photo}", ops: [[image.pad, {aspect: "16:9", fill: blur}], [export, {preset: web_jpeg}]]}
+
+- id: logo-top-left-png
+  split: train
+  kind: custom
+  request: "Place the logo in the top-left corner of the photo at about 15% of its width and save it as a PNG."
+  inputs: {photo: landscape.jpg, logo: logo.png}
+  graders:
+    - {type: format, formats: [PNG]}
+    - {type: ops_any, ops: [image.composite, image.watermark]}
+    - {type: step_arg, op: image.composite, arg: anchor, equals: top_left, soft: true}
+  reference:
+    version: 1
+    inputs: {photo: "${photo}", logo: "${logo}"}
+    steps:
+      - {id: branded, op: image.composite, in: [photo, logo], args: {anchor: top_left, scale: 0.15}}
+      - {id: out, op: export, in: branded, args: {preset: transparent_png}}
+    outputs: [out]
+
+- id: grid-2x2
+  split: test
+  kind: custom
+  request: "Combine these four shots into a 2x2 grid and give me a JPEG."
+  inputs: {a: shot1.jpg, b: shot2.jpg, c: shot3.jpg, d: shot4.jpg}
+  graders:
+    - {type: ops_include, ops: [image.grid]}
+    - {type: format, formats: [JPEG]}
+    - {type: dims, aspect: [1, 1], tol: 0.05}
+  reference:
+    version: 1
+    inputs: {a: "${a}", b: "${b}", c: "${c}", d: "${d}"}
+    steps:
+      - {id: sheet, op: image.grid, in: [a, b, c, d], args: {columns: 2}}
+      - {id: out, op: export, in: sheet, args: {preset: web_jpeg}}
+    outputs: [out]
+
+- id: black-and-white-png
+  split: train
+  kind: custom
+  request: "Make a black and white PNG of this photo."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: format, formats: [PNG]}
+    - {type: ops_include, ops: [image.convert]}
+  reference: {in: "${photo}", ops: [[image.convert, {mode: grayscale}], [export, {preset: transparent_png}]]}
+
+- id: center-square-crop
+  split: train
+  kind: custom
+  request: "Crop this photo to a square around the center and save it for the web."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: dims, aspect: [1, 1]}
+    - {type: format, formats: [JPEG, WEBP]}
+  reference: {in: "${photo}", ops: [[image.crop, {aspect: "1:1", focus: center}], [export, {preset: web_jpeg}]]}
+
+- id: resize-800-fill
+  split: validation
+  kind: custom
+  request: "Resize this to exactly 800x800, filling the frame and cropping the excess, for the web."
+  inputs: {photo: wide.jpg}
+  graders:
+    - {type: dims, width: 800, height: 800}
+    - {type: format, formats: [JPEG, WEBP]}
+  reference: {in: "${photo}", ops: [[image.resize, {width: 800, height: 800, mode: fill}], [export, {preset: web_jpeg}]]}
+
+- id: confidential-proof
+  split: train
+  kind: custom
+  request: "Stamp CONFIDENTIAL across the photo as a tiled proof and export a JPEG."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: step_arg, op: image.watermark, arg: text, contains: CONFIDENTIAL}
+    - {type: format, formats: [JPEG]}
+  reference: {in: "${photo}", ops: [[image.watermark, {preset: tiled_proof, text: CONFIDENTIAL}], [export, {preset: web_jpeg}]]}
+
+- id: yt-thumb-live-now
+  split: validation
+  kind: custom
+  request: "Make a YouTube thumbnail from this wide photo with 'Live now' at the bottom left."
+  inputs: {photo: wide.jpg}
+  graders:
+    - {type: dims, width: 1280, height: 720}
+    - {type: step_arg, op: image.text, arg: text, contains: "Live now"}
+  reference:
+    in: "${photo}"
+    ops:
+      - [image.crop, {aspect: "16:9", focus: attention}]
+      - [image.text, {text: "Live now", align: left, valign: bottom, box: [0.05, 0.62, 0.5, 0.2]}]
+      - [export, {preset: thumb_youtube}]
+
+- id: logo-and-caption-webp
+  split: test
+  kind: custom
+  request: "Add our logo bottom-right and the caption 'Grand opening' across the top of the photo, then give me a WebP."
+  inputs: {photo: landscape.jpg, logo: logo.png}
+  graders:
+    - {type: format, formats: [WEBP]}
+    - {type: step_arg, op: image.text, arg: text, contains: "Grand opening"}
+    - {type: ops_any, ops: [image.composite, image.watermark]}
+  reference:
+    version: 1
+    inputs: {photo: "${photo}", logo: "${logo}"}
+    steps:
+      - {id: branded, op: image.composite, in: [photo, logo], args: {anchor: bottom_right, scale: 0.15}}
+      - {id: titled, op: image.text, in: branded, args: {text: "Grand opening", valign: top, box: [0.05, 0.06, 0.9, 0.16]}}
+      - {id: out, op: export, in: titled, args: {preset: web_webp}}
+    outputs: [out]
+
+- id: downscale-under-200kb
+  split: train
+  kind: custom
+  request: "Scale this photo down to 1200 pixels wide, keeping its proportions, and save a JPEG under 200 KB."
+  inputs: {photo: wide.jpg}
+  graders:
+    - {type: dims, width: 1200}
+    - {type: format, formats: [JPEG]}
+    - {type: max_bytes, bytes: 200000}
+  reference: {in: "${photo}", ops: [[image.resize, {width: 1200}], [export, {preset: web_jpeg}]]}
+
+# ---- ambiguous: the right answer is a question ------------------------------------------
+- id: ask-resize
+  split: train
+  kind: ambiguous
+  request: "Resize the photo."
+  inputs: {photo: landscape.jpg}
+  graders:
+    - {type: asks_question}
+
+- id: ask-crop
+  split: validation
+  kind: ambiguous
+  request: "Crop it."
+  inputs: {photo: portrait.jpg}
+  graders:
+    - {type: asks_question}
+
+- id: ask-which-photo
+  split: test
+  kind: ambiguous
+  request: "Put the logo on the photo."
+  inputs: {first: landscape.jpg, second: portrait.jpg, logo: logo.png}
+  graders:
+    - {type: asks_question}
+
+# ---- aesthetic: judged by checks + a rubric ---------------------------------------------
+- id: instagram-pop
+  split: train
+  kind: aesthetic
+  request: "Make this photo pop for Instagram."
+  inputs: {photo: square.png}
+  graders:
+    - {type: format, formats: [JPEG, WEBP]}
+    - {type: ops_exclude, ops: [image.text, image.watermark]}
+  rubric:
+    - "The result has an aspect ratio suited to Instagram (square or 4:5 portrait)."
+    - "The result looks clearly more vivid or contrasty than the original."
+    - "No text, logo or watermark was added."
+    - "The main subject is not cut off."
+  reference: {in: "${photo}", ops: [[image.adjust, {contrast: 1.15, saturation: 1.3}], [export, {preset: web_jpeg}]]}
+
+- id: bold-youtube-title
+  split: validation
+  kind: aesthetic
+  request: "Make a bold, eye-catching YouTube thumbnail from this photo for a video called 'BUILT IN 24 HOURS'."
+  inputs: {photo: wide.jpg}
+  graders:
+    - {type: dims, width: 1280, height: 720}
+    - {type: step_arg, op: image.text, arg: text, contains: "BUILT IN 24 HOURS"}
+  rubric:
+    - "The title is large and easy to read at thumbnail size."
+    - "The title has strong contrast against what is behind it."
+    - "The title does not cover the main subject of the photo."
+    - "Nothing is cut off at the edges."
+  reference:
+    in: "${photo}"
+    ops:
+      - [image.crop, {aspect: "16:9", focus: attention}]
+      - [image.text, {text: "BUILT IN 24 HOURS", weight: bold, align: left, valign: top, stroke: 0.06, box: [0.06, 0.14, 0.6, 0.5], background: auto}]
+      - [export, {preset: thumb_youtube}]
+
+- id: clean-product-shot
+  split: test
+  kind: aesthetic
+  request: "Clean product shot for our store: white background, product centered with even margins."
+  inputs: {product: product.png}
+  graders:
+    - {type: dims, aspect: [1, 1]}
+    - {type: format, formats: [JPEG, PNG, WEBP]}
+    - {type: alpha, present: false}
+  rubric:
+    - "The background is plain white with no transparency artifacts."
+    - "The product is centered with roughly even margins on all sides."
+    - "The whole product is visible and nothing is cut off."
+  reference:
+    in: "${product}"
+    ops:
+      - [image.convert, {mode: rgb, alpha: flatten, background: "#ffffffff"}]
+      - [image.pad, {margin: 0.1, fill: color, color: "#ffffffff"}]
+      - [export, {preset: web_jpeg}]

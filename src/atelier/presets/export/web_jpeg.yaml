@@ -1,0 +1,17 @@
+id: web_jpeg
+version: 1
+kind: export.image
+description: JPEG for the web; long edge ≤ 2560, sRGB, ≤ 500 KB
+settings:
+  format: jpeg
+  quality: 85
+  min_quality: 60
+  subsampling: "4:2:0"
+  progressive: true
+  optimize: true
+  alpha: false
+  background: "#ffffff"
+  icc: srgb
+  size: {width: 2560, height: 2560, mode: max}
+  max_bytes: 512000
+  checks: [dimensions, file_size_budget, color_profile]

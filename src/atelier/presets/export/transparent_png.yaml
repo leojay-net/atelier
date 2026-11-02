@@ -1,0 +1,10 @@
+id: transparent_png
+version: 1
+kind: export.image
+description: Lossless PNG that keeps transparency (logos, cut-outs)
+settings:
+  format: png
+  compress_level: 9
+  alpha: true
+  icc: srgb
+  checks: [color_profile]

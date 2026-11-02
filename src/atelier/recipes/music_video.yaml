@@ -1,0 +1,10 @@
+id: music_video
+version: 1
+description: put a music track on a video (replacing its sound) and export it
+params:
+  in:      {type: asset, media: video}
+  music:   {type: asset, media: audio}
+  preset:  {type: preset, kind: export.video, default: web_h264}
+steps:
+  - {op: video.soundtrack, in: [in, music], args: {}}
+  - {op: export, args: {preset: "{{preset}}"}}

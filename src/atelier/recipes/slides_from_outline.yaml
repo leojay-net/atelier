@@ -1,0 +1,9 @@
+id: slides_from_outline
+version: 1
+description: add slides to a PowerPoint deck from an outline (layout, title, body lines per slide)
+params:
+  in:     {type: asset, media: pptx}
+  items:  {type: list}
+steps:
+  - {op: pptx.slide, args: {action: add, items: "{{items}}"}}
+  - {op: export, args: {preset: pptx_clean}}

@@ -1,0 +1,5 @@
+id: xlsx_clean
+version: 1
+kind: export.xlsx
+description: "Excel file: normalized properties, deterministic package"
+settings: {}

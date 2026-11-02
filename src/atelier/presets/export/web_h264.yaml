@@ -1,0 +1,16 @@
+id: web_h264
+version: 1
+kind: export.video
+description: "H.264 MP4 for the web; long edge ≤ 1920, ≤ 30 fps, AAC audio"
+settings:
+  encoder_preset: medium
+  profile: high
+  level: "4.1"
+  crf: 22
+  threads: 4
+  size: {width: 1920, height: 1920, mode: max}   # a box, so only the long edge is capped
+  max_fps: 30
+  audio: true
+  audio_bitrate: 128k
+  audio_rate: 48000
+  audio_channels: 2

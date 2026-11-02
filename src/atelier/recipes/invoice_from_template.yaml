@@ -1,0 +1,11 @@
+id: invoice_from_template
+version: 1
+description: fill a Word template with data ({{name}} → value) and produce a print-ready PDF
+params:
+  in:      {type: asset, media: docx}
+  data:    {type: object}
+  preset:  {type: preset, kind: export.pdf, default: pdf_print}
+steps:
+  - {op: doc.fill, args: {data: "{{data}}"}}
+  - {op: doc.convert, args: {}}
+  - {op: export, args: {preset: "{{preset}}"}}

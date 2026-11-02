@@ -1,0 +1,19 @@
+id: youtube_4k
+version: 1
+kind: export.video
+description: "YouTube upload: up to 3840x2160 (keeps the shape), ≤ 60 fps, high quality"
+settings:
+  encoder_preset: slow
+  profile: high
+  level: "5.2"
+  crf: 18
+  maxrate: 45M
+  bufsize: 90M
+  gop: 60
+  threads: 4
+  size: {width: 3840, height: 2160, mode: max}
+  max_fps: 60
+  audio: true
+  audio_bitrate: 256k
+  audio_rate: 48000
+  audio_channels: 2

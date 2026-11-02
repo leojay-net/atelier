@@ -1,0 +1,33 @@
+# One machine, no broker: an API process and workers sharing a volume (SQLite + the stores).
+# Scale out by pointing ATELIER_DB_* at Postgres and running more `worker` containers.
+#
+#   docker build -f docker/Dockerfile -t atelier-ref .
+#   docker build -f docker/app.Dockerfile -t atelier-app .        # from the repository root
+#   ATELIER_SECRET_KEY=$(openssl rand -hex 32) docker compose up -d
+#   docker compose run --rm api manage create_org acme "Acme Studio"     # prints an API key once
+#   curl -H "Authorization: Bearer atk_…" localhost:8000/api/v1/me
+
+x-atelier: &atelier
+  image: atelier-app
+  environment:
+    ATELIER_SECRET_KEY: ${ATELIER_SECRET_KEY:?set ATELIER_SECRET_KEY}
+    ATELIER_ALLOWED_HOSTS: ${ATELIER_ALLOWED_HOSTS:-localhost,127.0.0.1}
+    ATELIER_CORS_ORIGINS: ${ATELIER_CORS_ORIGINS:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  volumes:
+    - atelier-data:/data
+
+services:
+  api:
+    <<: *atelier
+    command: ["api"]
+    ports:
+      - "8000:8000"
+  worker:
+    <<: *atelier
+    command: ["worker"]
+    deploy:
+      replicas: 1
+
+volumes:
+  atelier-data:

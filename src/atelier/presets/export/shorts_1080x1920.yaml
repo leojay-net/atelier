@@ -1,0 +1,25 @@
+id: shorts_1080x1920
+version: 1
+kind: export.video
+description: "Vertical 1080x1920, 30 fps: YouTube Shorts"
+settings:
+  encoder_preset: medium
+  profile: high
+  level: "4.1"
+  crf: 20
+  maxrate: 8M
+  bufsize: 16M
+  gop: 60
+  threads: 4
+  size: {width: 1080, height: 1920, mode: fill}   # crops to fill; reframe first to choose how
+  fps: 30
+  audio: true
+  audio_bitrate: 160k
+  audio_rate: 48000
+  audio_channels: 2
+  loudness: {target_lufs: -14, true_peak_db: -1.0}
+  # NOTE: limits and safe areas mirror reels_1080x1920. Check YouTube Shorts's current rules
+  # before relying on them, and bump this preset's version when they are confirmed.
+  max_duration: 90
+  # UI overlays on the platforms cover the top, bottom and edges.
+  safe_area: {top: 0.14, bottom: 0.20, left: 0.06, right: 0.06}

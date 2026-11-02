@@ -1,0 +1,18 @@
+id: thumb_youtube
+version: 1
+kind: export.image
+description: YouTube thumbnail, 1280x720 JPEG ≤ 2 MB, clear of the timestamp badge
+settings:
+  format: jpeg
+  quality: 90
+  min_quality: 65
+  subsampling: "4:2:0"
+  optimize: true
+  alpha: false
+  background: "#000000"
+  icc: srgb
+  size: {width: 1280, height: 720, mode: fill, focus: attention}
+  max_bytes: 2097152
+  # The duration badge covers the bottom-right corner.
+  safe_area: {top: 0.04, bottom: 0.12, left: 0.04, right: 0.04}
+  checks: [dimensions, file_size_budget, color_profile, safe_margins]

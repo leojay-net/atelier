@@ -1,0 +1,11 @@
+id: voice_opus
+version: 1
+kind: export.audio
+description: "Voice Opus: 48 kbps mono, -16 LUFS; small files for speech"
+settings:
+  format: opus
+  bitrate: 48k
+  sample_rate: 48000
+  channels: 1
+  loudness: {target_lufs: -16, true_peak_db: -1.0}
+  checks: [dead_air]

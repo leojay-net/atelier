@@ -1,0 +1,13 @@
+id: captioned_reel
+version: 1
+description: make a video vertical for Reels / TikTok / Shorts and burn in captions from an SRT/VTT file
+params:
+  in:        {type: asset, media: video}
+  captions:  {type: asset, media: text}
+  platform:  {type: enum, values: [reels, tiktok, shorts], default: reels}
+  framing:   {type: enum, values: [fill, blur_pad], default: fill}
+  style:     {type: enum, values: [clean, bold_pop, minimal_lower], default: clean}
+steps:
+  - {id: framed, op: video.reframe, args: {aspect: "9:16", mode: "{{framing}}"}}
+  - {op: video.captions, in: [framed, captions], args: {style: "{{style}}", position: lower_safe}}
+  - {op: export, args: {preset: "{{platform}}_1080x1920"}}

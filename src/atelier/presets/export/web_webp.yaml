@@ -1,0 +1,14 @@
+id: web_webp
+version: 1
+kind: export.image
+description: WebP for the web; long edge ≤ 2560, keeps alpha, ≤ 400 KB
+settings:
+  format: webp
+  quality: 82
+  min_quality: 55
+  method: 4
+  alpha: true
+  icc: srgb
+  size: {width: 2560, height: 2560, mode: max}
+  max_bytes: 409600
+  checks: [dimensions, file_size_budget, color_profile]

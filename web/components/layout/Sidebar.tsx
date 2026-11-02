@@ -1,0 +1,46 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Image as ImageIcon, ListChecks, BookMarked, Settings, Wand2 } from "lucide-react";
+import clsx from "clsx";
+
+const NAV = [
+  { href: "/", label: "Workbench", icon: Wand2, exact: true },
+  { href: "/assets", label: "Assets", icon: ImageIcon },
+  { href: "/jobs", label: "Jobs", icon: ListChecks },
+  { href: "/recipes", label: "Recipes", icon: BookMarked },
+  { href: "/settings", label: "Keys", icon: Settings },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
+
+  return (
+    <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-bg-subtle">
+      <div className="flex h-14 items-center px-5">
+        <span className="text-[15px] font-semibold tracking-tight text-fg">Atelier</span>
+      </div>
+      <nav className="flex flex-col gap-0.5 px-3 py-2">
+        {NAV.map(({ href, label, icon: Icon, exact }) => {
+          const active = exact ? pathname === href : pathname.startsWith(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={clsx(
+                "flex items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+                active
+                  ? "bg-accent-subtle-bg text-accent"
+                  : "text-fg-secondary hover:bg-bg-inset hover:text-fg",
+              )}
+            >
+              <Icon size={17} strokeWidth={2} />
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}

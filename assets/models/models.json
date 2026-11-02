@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "models": {
+    "u2netp": {
+      "description": "U2-Net (small): salient-object segmentation, used to cut a subject out of its background",
+      "license": "Apache-2.0",
+      "source": "https://github.com/xuebinqin/U-2-Net, ONNX export from https://github.com/danielgatis/rembg",
+      "files": [
+        {
+          "path": "u2netp.onnx",
+          "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+          "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+          "size": 4574861
+        }
+      ]
+    },
+    "rnnoise-bd": {
+      "description": "RNNoise model 'beguiling drafter': suppresses steady and non-steady noise in speech",
+      "license": "BSD-3-Clause (as RNNoise)",
+      "source": "https://github.com/GregorR/rnnoise-models",
+      "files": [
+        {
+          "path": "bd.rnnn",
+          "url": "https://raw.githubusercontent.com/GregorR/rnnoise-models/6c2c1301c30a6be5ddf93704a693f4956ce2aa55/beguiling-drafter-2018-08-30/bd.rnnn",
+          "sha256": "ae3f7411e1e6a884f839a4a145c394408398f09854dbc1216ee02faafc98a17b",
+          "size": 299693
+        }
+      ]
+    },
+    "yunet": {
+      "description": "YuNet: a small anchor-free face detector, used to find faces to blur in video",
+      "license": "MIT",
+      "source": "https://github.com/opencv/opencv_zoo at 26cc381e4d2594bb9f47a26eb8fd96c94a13660d",
+      "files": [
+        {
+          "path": "face_detection_yunet_2023mar.onnx",
+          "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+          "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+          "size": 232589
+        }
+      ]
+    },
+    "fsrcnn": {
+      "description": "FSRCNN: a small super-resolution CNN, used to upscale images and video (2x, 3x, 4x)",
+      "license": "Apache-2.0",
+      "source": "https://github.com/Saafke/FSRCNN_Tensorflow at cbd81f25d0c54a57da541957a6c64eb0e40eea25",
+      "files": [
+        {
+          "path": "FSRCNN_x2.pb",
+          "url": "https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/cbd81f25d0c54a57da541957a6c64eb0e40eea25/models/FSRCNN_x2.pb",
+          "sha256": "366b33f0084c7b3f2bf6724f0a2c77bca94fcec9d7b6d72389d330073b380d5c",
+          "size": 38973
+        },
+        {
+          "path": "FSRCNN_x3.pb",
+          "url": "https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/cbd81f25d0c54a57da541957a6c64eb0e40eea25/models/FSRCNN_x3.pb",
+          "sha256": "efd38655a815908c6c8954db6052f128e76a735f1de657894c477d0dc0b64481",
+          "size": 40093
+        },
+        {
+          "path": "FSRCNN_x4.pb",
+          "url": "https://raw.githubusercontent.com/Saafke/FSRCNN_Tensorflow/cbd81f25d0c54a57da541957a6c64eb0e40eea25/models/FSRCNN_x4.pb",
+          "sha256": "5c68d18db561aed8ead4ffedf1b897ea615baaf60ebf6c35f8e641f8fa4a21bf",
+          "size": 41661
+        }
+      ]
+    },
+    "whisper-tiny": {
+      "description": "Whisper tiny (CTranslate2 format): speech recognition for automatic captions",
+      "license": "MIT",
+      "source": "https://huggingface.co/Systran/faster-whisper-tiny at d90ca5fe260221311c53c58e660288d3deb8d356",
+      "files": [
+        {
+          "path": "config.json",
+          "url": "https://huggingface.co/Systran/faster-whisper-tiny/resolve/d90ca5fe260221311c53c58e660288d3deb8d356/config.json",
+          "sha256": "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
+          "size": 2249
+        },
+        {
+          "path": "model.bin",
+          "url": "https://huggingface.co/Systran/faster-whisper-tiny/resolve/d90ca5fe260221311c53c58e660288d3deb8d356/model.bin",
+          "sha256": "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
+          "size": 75538270
+        },
+        {
+          "path": "tokenizer.json",
+          "url": "https://huggingface.co/Systran/faster-whisper-tiny/resolve/d90ca5fe260221311c53c58e660288d3deb8d356/tokenizer.json",
+          "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+          "size": 2203239
+        },
+        {
+          "path": "vocabulary.txt",
+          "url": "https://huggingface.co/Systran/faster-whisper-tiny/resolve/d90ca5fe260221311c53c58e660288d3deb8d356/vocabulary.txt",
+          "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+          "size": 459861
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+id: voiceover_music
+version: 1
+description: mix music under a voice recording, the music ducking while the voice speaks
+params:
+  in:      {type: asset, media: audio}
+  music:   {type: asset, media: audio}
+  format:  {type: enum, values: [podcast_mp3, podcast_m4a, voice_opus, wav_master], default: podcast_mp3}
+steps:
+  - {op: audio.mix, in: [in, music], args: {}}
+  - {op: export, args: {preset: "{{format}}"}}

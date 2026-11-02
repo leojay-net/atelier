@@ -1,0 +1,5 @@
+id: docx_clean
+version: 1
+kind: export.docx
+description: "Word file: normalized properties, deterministic package"
+settings: {}

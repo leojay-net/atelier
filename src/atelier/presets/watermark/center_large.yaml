@@ -1,0 +1,10 @@
+id: center_large
+version: 1
+kind: watermark
+description: big centered mark at 25% opacity
+settings:
+  anchor: center
+  margin: 0.0
+  scale: 0.5
+  opacity: 0.25
+  text: {font: Inter, weight: bold, color: "#ffffff"}

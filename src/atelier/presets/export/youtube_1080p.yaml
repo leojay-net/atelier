@@ -1,0 +1,19 @@
+id: youtube_1080p
+version: 1
+kind: export.video
+description: "YouTube upload: up to 1920x1080 (keeps the shape), ≤ 60 fps, high quality"
+settings:
+  encoder_preset: slow
+  profile: high
+  level: "4.2"
+  crf: 18
+  maxrate: 12M
+  bufsize: 24M
+  gop: 60
+  threads: 4
+  size: {width: 1920, height: 1080, mode: max}
+  max_fps: 60
+  audio: true
+  audio_bitrate: 192k
+  audio_rate: 48000
+  audio_channels: 2

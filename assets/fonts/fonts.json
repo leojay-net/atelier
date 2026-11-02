@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "families": {
+    "Inter": {
+      "license": "OFL-1.1",
+      "license_file": "LICENSE-Inter.txt",
+      "source": "https://github.com/rsms/inter v4.1",
+      "weights": {
+        "regular": {
+          "file": "Inter-Regular.ttf",
+          "sha256": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82"
+        },
+        "medium": {
+          "file": "Inter-Medium.ttf",
+          "sha256": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872"
+        },
+        "semibold": {
+          "file": "Inter-SemiBold.ttf",
+          "sha256": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3"
+        },
+        "bold": {
+          "file": "Inter-Bold.ttf",
+          "sha256": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f"
+        }
+      }
+    },
+    "Noto Sans": {
+      "license": "OFL-1.1",
+      "license_file": "LICENSE-Noto.txt",
+      "source": "https://github.com/notofonts/notofonts.github.io",
+      "weights": {
+        "regular": {
+          "file": "NotoSans-Regular.ttf",
+          "sha256": "478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823"
+        },
+        "bold": {
+          "file": "NotoSans-Bold.ttf",
+          "sha256": "1df075a380fc7cb898acf64c1f7b3b4dd780de3caa860178bf929de35817a913"
+        }
+      }
+    },
+    "Noto Serif": {
+      "license": "OFL-1.1",
+      "license_file": "LICENSE-Noto.txt",
+      "source": "https://github.com/notofonts/notofonts.github.io",
+      "weights": {
+        "regular": {
+          "file": "NotoSerif-Regular.ttf",
+          "sha256": "19e72cd8d595fae5bd74a5206f5d938512e1183d4fed7abb1ec1be1d7efa5f88"
+        },
+        "bold": {
+          "file": "NotoSerif-Bold.ttf",
+          "sha256": "96656aa5cec8f1d6fd0e804c1fad397e1a1cfa082e6642124e0bda68cd8363ce"
+        }
+      }
+    }
+  }
+}

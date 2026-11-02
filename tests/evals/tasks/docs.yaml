@@ -1,0 +1,610 @@
+# Agent eval suite v1, documents: 40 tasks (docs/09-testing.md §9.4, Phase 4).
+#
+# Same shape as the image and video suites: 20 recipe-shaped, 14 custom multi-step, 3 ambiguous
+# and 3 aesthetic; 22 train, 8 validation, 10 test. Tuning may look at train and validation only.
+#
+# Every task that expects output carries a `reference` spec, and tests/unit/test_evals_tasks.py
+# runs each through the engine and requires every non-soft grader to pass (tasks that print a
+# document through LibreOffice run only where it is installed: the reference image). Graders judge
+# the delivered file: its kind, pages, text, form fields, workbook cells, embedded fonts.
+# Inputs are synthetic (tests/evals/make_doc_inputs.py).
+
+# ---- recipe-shaped: fill a Word template, get a PDF -------------------------------------
+- id: invoice-globex
+  split: train
+  kind: recipe
+  request: "Fill in this invoice template for Globex: invoice INV-204, dated 5 March 2026, total $1,250.00, issued by Acme Studio. I need a print-ready PDF."
+  inputs: {template: invoice_template.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Globex", "INV-204", "5 March 2026", "$1,250.00", "Acme Studio"]}
+    - {type: text_lacks, terms: ["{{"]}
+    - {type: fonts}
+    - {type: recipe, name: invoice_from_template, soft: true}
+  reference:
+    recipe: invoice_from_template
+    params:
+      in: "${template}"
+      data: {company: "Acme Studio", invoice_no: "INV-204", customer: "Globex", date: "5 March 2026", total: "$1,250.00"}
+
+- id: invoice-initech
+  split: validation
+  kind: recipe
+  request: "Invoice for Initech please: number INV-311, date 12 April 2026, total $980.50, from Acme Studio. PDF, ready to print."
+  inputs: {template: invoice_template.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Initech", "INV-311", "12 April 2026", "$980.50"]}
+    - {type: text_lacks, terms: ["{{"]}
+    - {type: fonts}
+  reference:
+    recipe: invoice_from_template
+    params:
+      in: "${template}"
+      data: {company: "Acme Studio", invoice_no: "INV-311", customer: "Initech", date: "12 April 2026", total: "$980.50"}
+
+- id: invoice-umbrella
+  split: test
+  kind: recipe
+  request: "Use this template to make an invoice PDF for Umbrella Ltd: INV-500, 30 June 2026, $4,200.00, issued by Acme Studio."
+  inputs: {template: invoice_template.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Umbrella Ltd", "INV-500", "30 June 2026", "$4,200.00"]}
+    - {type: text_lacks, terms: ["{{"]}
+    - {type: fonts}
+  reference:
+    recipe: invoice_from_template
+    params:
+      in: "${template}"
+      data: {company: "Acme Studio", invoice_no: "INV-500", customer: "Umbrella Ltd", date: "30 June 2026", total: "$4,200.00"}
+
+- id: offer-letter-pdf
+  split: train
+  kind: recipe
+  request: "Turn this offer letter into a PDF for Priya Nair, Data Engineer, salary $95,000, starting on 1 June 2026."
+  inputs: {letter: offer_letter.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Priya Nair", "Data Engineer", "$95,000", "1 June 2026"]}
+    - {type: text_lacks, terms: ["{{"]}
+  reference:
+    recipe: invoice_from_template
+    params:
+      in: "${letter}"
+      data: {name: "Priya Nair", role: "Data Engineer", salary: "$95,000", start_date: "1 June 2026"}
+
+- id: offer-letter-print
+  split: train
+  kind: recipe
+  request: "Make a print-quality PDF of this offer letter for Tom Baker, Support Lead, $58,000 a year, first day 15 September 2026."
+  inputs: {letter: offer_letter.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Tom Baker", "Support Lead", "$58,000", "15 September 2026"]}
+    - {type: fonts}
+  reference:
+    recipe: invoice_from_template
+    params:
+      in: "${letter}"
+      data: {name: "Tom Baker", role: "Support Lead", salary: "$58,000", start_date: "15 September 2026"}
+      preset: pdf_print
+
+# ---- recipe-shaped: a Word report as a PDF ----------------------------------------------
+- id: report-pdf-numbered
+  split: train
+  kind: recipe
+  request: "Convert this report to a PDF with page numbers."
+  inputs: {report: report.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Quarterly report", "1 / "]}
+    - {type: fonts}
+    - {type: recipe, name: report_docx_to_pdf, soft: true}
+  reference: {recipe: report_docx_to_pdf, params: {in: "${report}"}}
+
+- id: report-pdf-plain
+  split: validation
+  kind: recipe
+  request: "Make a PDF of this report. No page numbers, please."
+  inputs: {report: report.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Quarterly report"]}
+    - {type: text_lacks, terms: ["1 / "]}
+  reference: {recipe: report_docx_to_pdf, params: {in: "${report}", page_numbers: false}}
+
+- id: report-pdf-email
+  split: test
+  kind: recipe
+  request: "I need this report as a PDF for email, with page numbers. Keep the file small."
+  inputs: {report: report.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Quarterly report", "1 / "]}
+    - {type: max_bytes, bytes: 200000}
+  reference: {recipe: report_docx_to_pdf, params: {in: "${report}", preset: pdf_screen}}
+
+# ---- recipe-shaped: redact and stamp ----------------------------------------------------
+- id: redact-names-contract
+  split: train
+  kind: recipe
+  request: "Redact the names John Smith and Mary Jones from this contract and stamp every page CONFIDENTIAL."
+  inputs: {contract: contract.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 3}
+    - {type: text_lacks, terms: ["John", "Mary", "Smith", "Jones"]}
+    - {type: text_has, terms: ["CONFIDENTIAL"]}
+    - {type: recipe, name: contract_redact_and_stamp, soft: true}
+  reference:
+    recipe: contract_redact_and_stamp
+    params: {in: "${contract}", terms: ["John Smith", "Mary Jones"], label: "CONFIDENTIAL"}
+
+- id: redact-account-contract
+  split: validation
+  kind: recipe
+  request: "Remove the account number 998877 from this contract permanently and put INTERNAL on each page."
+  inputs: {contract: contract.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 3}
+    - {type: text_lacks, terms: ["998877"]}
+    - {type: text_has, terms: ["INTERNAL"]}
+  reference:
+    recipe: contract_redact_and_stamp
+    params: {in: "${contract}", terms: ["998877"], label: "INTERNAL"}
+
+- id: redact-signatory-contract
+  split: test
+  kind: recipe
+  request: "Black out Mary Jones everywhere in this contract, really remove her name, and stamp CONFIDENTIAL on the pages."
+  inputs: {contract: contract.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_lacks, terms: ["Mary", "Jones"]}
+    - {type: text_has, terms: ["CONFIDENTIAL"]}
+  reference:
+    recipe: contract_redact_and_stamp
+    params: {in: "${contract}", terms: ["Mary Jones"], label: "CONFIDENTIAL"}
+
+# ---- recipe-shaped: slides from an outline ----------------------------------------------
+- id: slides-agenda
+  split: train
+  kind: recipe
+  request: "Add two slides to this deck: 'Q3 results' with the bullets 'Revenue up 12%' and 'Margin steady', and 'Next steps' with 'Hire two engineers'."
+  inputs: {deck: deck_plain.pptx}
+  graders:
+    - {type: kind, is: pptx}
+    - {type: slides, n: 4}
+    - {type: text_has, terms: ["Q3 results", "Revenue up 12%", "Margin steady", "Next steps", "Hire two engineers"]}
+    - {type: recipe, name: slides_from_outline, soft: true}
+  reference:
+    recipe: slides_from_outline
+    params:
+      in: "${deck}"
+      items:
+        - {layout: "Title and Content", title: "Q3 results", body: ["Revenue up 12%", "Margin steady"]}
+        - {layout: "Title and Content", title: "Next steps", body: ["Hire two engineers"]}
+
+- id: slides-outline-risks
+  split: train
+  kind: recipe
+  request: "Append a 'Risks' slide with the bullets 'Supply delays' and 'Currency swings' to this deck."
+  inputs: {deck: deck_plain.pptx}
+  graders:
+    - {type: kind, is: pptx}
+    - {type: slides, n: 3}
+    - {type: text_has, terms: ["Risks", "Supply delays", "Currency swings"]}
+  reference:
+    recipe: slides_from_outline
+    params:
+      in: "${deck}"
+      items:
+        - {layout: "Title and Content", title: "Risks", body: ["Supply delays", "Currency swings"]}
+
+- id: slides-outline-close
+  split: test
+  kind: recipe
+  request: "Add three slides to this deck: 'Roadmap' (bullet: 'Launch in May'), 'Budget' (bullet: 'Within plan') and a closing 'Thank you' slide."
+  inputs: {deck: deck_plain.pptx}
+  graders:
+    - {type: kind, is: pptx}
+    - {type: slides, n: 5}
+    - {type: text_has, terms: ["Roadmap", "Launch in May", "Budget", "Within plan", "Thank you"]}
+  reference:
+    recipe: slides_from_outline
+    params:
+      in: "${deck}"
+      items:
+        - {layout: "Title and Content", title: "Roadmap", body: ["Launch in May"]}
+        - {layout: "Title and Content", title: "Budget", body: ["Within plan"]}
+        - {layout: "Title Only", title: "Thank you"}
+
+# ---- recipe-shaped: a smaller PDF, a filled form, joined PDFs ---------------------------
+- id: compress-photo-report
+  split: train
+  kind: recipe
+  request: "Shrink this PDF so it is easy to email."
+  inputs: {report: photo_report.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 2}
+    - {type: max_bytes, bytes: 700000}
+  reference: {in: "${report}", ops: [[export, {preset: pdf_screen}]]}
+
+- id: compress-photo-report-again
+  split: train
+  kind: recipe
+  request: "This PDF is too big to send. Make it much smaller without losing pages."
+  inputs: {report: photo_report.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 2}
+    - {type: max_bytes, bytes: 700000}
+  reference: {in: "${report}", ops: [[export, {preset: pdf_screen}]]}
+
+- id: fill-application-form
+  split: train
+  kind: recipe
+  request: "Fill in the application form: full name Ada Lovelace, city London, and tick the agree box."
+  inputs: {form: application.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: form, values: {full_name: "Ada Lovelace", city: "London", agree: true}}
+  reference:
+    in: "${form}"
+    ops:
+      - [pdf.form, {fields: {full_name: "Ada Lovelace", city: "London", agree: true}}]
+      - [export, {preset: pdf_screen}]
+
+- id: fill-application-flat
+  split: validation
+  kind: recipe
+  request: "Fill in this form with name Grace Hopper and city New York, then flatten it so nobody can edit it."
+  inputs: {form: application.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Grace Hopper", "New York"]}
+    - {type: info, key: fields, max: 0}
+  reference:
+    in: "${form}"
+    ops:
+      - [pdf.form, {fields: {full_name: "Grace Hopper", city: "New York"}, flatten: true}]
+      - [export, {preset: pdf_screen}]
+
+- id: merge-agreements
+  split: train
+  kind: recipe
+  request: "Join agreement A and agreement B into one PDF."
+  inputs: {a: agreement_a.pdf, b: agreement_b.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 5}
+    - {type: text_has, terms: ["Agreement A, page 1", "Agreement B, page 2"]}
+  reference:
+    inputs: {a: "${a}", b: "${b}"}
+    steps:
+      - {id: joined, op: pdf.merge, in: [a, b], args: {}}
+      - {id: out, op: export, in: joined, args: {preset: pdf_screen}}
+    outputs: [out]
+
+- id: merge-three-in-order
+  split: test
+  kind: recipe
+  request: "Put agreement A, then agreement B, then the terms into a single PDF."
+  inputs: {a: agreement_a.pdf, b: agreement_b.pdf, terms: terms.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 6}
+    - {type: page_text, page: 1, has: "Agreement A"}
+    - {type: page_text, page: 6, has: "Terms and conditions"}
+  reference:
+    inputs: {a: "${a}", b: "${b}", terms: "${terms}"}
+    steps:
+      - {id: joined, op: pdf.merge, in: [a, b, terms], args: {}}
+      - {id: out, op: export, in: joined, args: {preset: pdf_screen}}
+    outputs: [out]
+
+# ---- custom, multi-step -----------------------------------------------------------------
+- id: extract-chapters
+  split: train
+  kind: custom
+  request: "Give me chapters 2 to 4 of the handbook as a separate PDF."
+  inputs: {book: handbook.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, n: 3}
+    - {type: text_has, terms: ["Chapter 2", "Chapter 4"]}
+    - {type: text_lacks, terms: ["Chapter 5", "Chapter 1"]}
+  reference: {in: "${book}", ops: [[pdf.pages, {pages: "2-4"}], [export, {preset: pdf_screen}]]}
+
+- id: last-page-first
+  split: train
+  kind: custom
+  request: "Move the last page of the handbook to the front and keep the rest in order."
+  inputs: {book: handbook.pdf}
+  graders:
+    - {type: pages, n: 6}
+    - {type: page_text, page: 1, has: "Chapter 6"}
+    - {type: page_text, page: 2, has: "Chapter 1"}
+  reference: {in: "${book}", ops: [[pdf.pages, {pages: "last,1-5"}], [export, {preset: pdf_screen}]]}
+
+- id: rotate-page
+  split: train
+  kind: custom
+  request: "Page 3 of this handbook is sideways. Turn it a quarter turn clockwise."
+  inputs: {book: handbook.pdf}
+  graders:
+    - {type: pages, n: 6}
+    - {type: rotation, page: 3, degrees: 90}
+    - {type: rotation, page: 2, degrees: 0}
+  reference: {in: "${book}", ops: [[pdf.rotate, {degrees: 90, pages: "3"}], [export, {preset: pdf_screen}]]}
+
+- id: draft-watermark
+  split: train
+  kind: custom
+  request: "Put a big faint diagonal DRAFT watermark across every page of this contract."
+  inputs: {contract: contract.pdf}
+  graders:
+    - {type: pages, n: 3}
+    - {type: text_has, terms: ["DRAFT", "SERVICE CONTRACT"]}
+    - {type: step_arg, op: pdf.stamp, arg: text, contains: "DRAFT"}
+  reference:
+    in: "${contract}"
+    ops:
+      - [pdf.stamp, {text: "DRAFT", position: center, size: 96, opacity: 0.2, angle: 45, color: "#ff0000"}]
+      - [export, {preset: pdf_screen}]
+
+- id: offer-letter-with-terms
+  split: test
+  kind: custom
+  request: "Make an offer letter PDF for Sam Okoye, Designer, $70,000, starting 3 August 2026, and attach the terms and conditions after it."
+  inputs: {letter: offer_letter.docx, terms: terms.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: pages, min: 2}
+    - {type: text_has, terms: ["Sam Okoye", "Designer", "$70,000", "Terms and conditions"]}
+    - {type: text_lacks, terms: ["{{"]}
+  reference:
+    inputs: {letter: "${letter}", terms: "${terms}"}
+    steps:
+      - {id: filled, op: doc.fill, in: letter, args: {data: {name: "Sam Okoye", role: "Designer", salary: "$70,000", start_date: "3 August 2026"}}}
+      - {id: printed, op: doc.convert, in: filled, args: {}}
+      - {id: joined, op: pdf.merge, in: [printed, terms], args: {}}
+      - {id: out, op: export, in: joined, args: {preset: pdf_screen}}
+    outputs: [out]
+
+- id: budget-add-line
+  split: train
+  kind: custom
+  request: "Add a line 'Marketing' to the budget with planned 1500 and actual 1320 under Travel, and update the totals. Make sure every formula is calculated."
+  inputs: {budget: budget.xlsx}
+  graders:
+    - {type: kind, is: xlsx}
+    - {type: cell, ref: A6, equals: "Marketing"}
+    - {type: cell, ref: B7, equals: 9500}
+    - {type: cell, ref: C7, equals: 9180}
+    - {type: calculated}
+  reference:
+    in: "${budget}"
+    ops:
+      - [xlsx.write, {rows: [["Marketing", 1500, 1320, "=B6/C6"]], start: "A6", cells: {A7: "Total", B7: "=SUM(B2:B6)", C7: "=SUM(C2:C6)"}}]
+      - [xlsx.recalc, {}]
+      - [export, {preset: xlsx_clean}]
+
+- id: budget-fix-errors
+  split: test
+  kind: custom
+  request: "Some formulas in this budget show errors. Fix them so everything calculates."
+  inputs: {budget: budget_errors.xlsx}
+  graders:
+    - {type: kind, is: xlsx}
+    - {type: calculated}
+    - {type: cell, ref: D2, equals: 0}
+  reference:
+    in: "${budget}"
+    ops:
+      - [xlsx.write, {cells: {D2: "=IFERROR(B2/C2,0)"}}]
+      - [xlsx.recalc, {}]
+      - [export, {preset: xlsx_clean}]
+
+- id: sales-totals
+  split: train
+  kind: custom
+  request: "Fill in the Total row of this sales sheet with the sum of each quarter, and show the numbers with a thousands separator."
+  inputs: {sales: sales.xlsx}
+  graders:
+    - {type: kind, is: xlsx}
+    - {type: cell, ref: B5, equals: 280}
+    - {type: cell, ref: E5, equals: 389}
+    - {type: calculated}
+  reference:
+    in: "${sales}"
+    ops:
+      - [xlsx.write, {cells: {B5: "=SUM(B2:B4)", C5: "=SUM(C2:C4)", D5: "=SUM(D2:D4)", E5: "=SUM(E2:E4)"}, number_formats: {"B2:E5": "#,##0"}}]
+      - [xlsx.recalc, {}]
+      - [export, {preset: xlsx_clean}]
+
+- id: replace-company
+  split: train
+  kind: custom
+  request: "Change every mention of Old Corp to New Corp in this report, including the page header."
+  inputs: {report: report.docx}
+  graders:
+    - {type: kind, is: docx}
+    - {type: text_lacks, terms: ["Old Corp"]}
+    - {type: text_has, terms: ["New Corp"]}
+  reference:
+    in: "${report}"
+    ops:
+      - [doc.replace, {replacements: {"Old Corp": "New Corp"}}]
+      - [export, {preset: docx_clean}]
+
+- id: table-in-report
+  split: validation
+  kind: custom
+  request: "In this report put a table of sales by region (columns Region and Sales: North 120, South 90, West 70) where the {{items_table}} marker is, and take out the {{logo}} marker."
+  inputs: {report: report_layout.docx}
+  graders:
+    - {type: kind, is: docx}
+    - {type: text_has, terms: ["Region", "Sales", "North", "120", "South", "West"]}
+    - {type: placeholders, max: 0}
+    - {type: info, key: tables, n: 1}
+  reference:
+    in: "${report}"
+    ops:
+      - [doc.table, {at: "{{items_table}}", rows: [["Region", "Sales"], ["North", 120], ["South", 90], ["West", 70]]}]
+      - [doc.replace, {replacements: {"{{logo}}": ""}}]
+      - [export, {preset: docx_clean}]
+
+- id: logo-in-report
+  split: test
+  kind: custom
+  request: "Put our logo where the {{logo}} marker is in this report, and delete the {{items_table}} marker."
+  inputs: {report: report_layout.docx, logo: logo.png}
+  graders:
+    - {type: kind, is: docx}
+    - {type: info, key: images, min: 1}
+    - {type: placeholders, max: 0}
+  reference:
+    inputs: {report: "${report}", logo: "${logo}"}
+    steps:
+      - {id: branded, op: doc.image, in: [report, logo], args: {at: "{{logo}}", width_pt: 120}}
+      - {id: cleaned, op: doc.replace, in: branded, args: {replacements: {"{{items_table}}": ""}}}
+      - {id: out, op: export, in: cleaned, args: {preset: docx_clean}}
+    outputs: [out]
+
+- id: deck-fill-cover
+  split: train
+  kind: custom
+  request: "Fill in this deck for Globex, quarter Q3."
+  inputs: {deck: deck_template.pptx}
+  graders:
+    - {type: kind, is: pptx}
+    - {type: slides, n: 2}
+    - {type: text_has, terms: ["Globex - Q3"]}
+    - {type: placeholders, max: 0}
+  reference:
+    in: "${deck}"
+    ops:
+      - [doc.fill, {data: {company: "Globex", quarter: "Q3"}}]
+      - [export, {preset: pptx_clean}]
+
+- id: deck-agenda-first
+  split: validation
+  kind: custom
+  request: "Move the Agenda slide to the front of this deck."
+  inputs: {deck: deck_plain.pptx}
+  graders:
+    - {type: slides, n: 2}
+    - {type: page_text, page: 1, has: "Agenda"}
+    - {type: page_text, page: 2, has: "Business review"}
+  reference:
+    in: "${deck}"
+    ops:
+      - [pptx.slide, {action: move, index: 2, to: 1}]
+      - [export, {preset: pptx_clean}]
+
+- id: deck-drop-agenda
+  split: train
+  kind: custom
+  request: "Delete the Agenda slide from this deck."
+  inputs: {deck: deck_plain.pptx}
+  graders:
+    - {type: slides, n: 1}
+    - {type: text_lacks, terms: ["Agenda"]}
+    - {type: text_has, terms: ["Business review"]}
+  reference:
+    in: "${deck}"
+    ops:
+      - [pptx.slide, {action: delete, index: 2}]
+      - [export, {preset: pptx_clean}]
+
+# ---- ambiguous: the right move is a question --------------------------------------------
+- id: ask-redact
+  split: train
+  kind: ambiguous
+  request: "Redact this contract."
+  inputs: {contract: contract.pdf}
+  graders:
+    - {type: asks_question}
+
+- id: ask-fill-template
+  split: validation
+  kind: ambiguous
+  request: "Fill in the template."
+  inputs: {template: invoice_template.docx}
+  graders:
+    - {type: asks_question}
+
+- id: ask-which-pages
+  split: test
+  kind: ambiguous
+  request: "Send me only the relevant pages of the handbook."
+  inputs: {book: handbook.pdf}
+  graders:
+    - {type: asks_question}
+
+# ---- aesthetic: judged by checks + a rubric ---------------------------------------------
+- id: client-ready-report
+  split: train
+  kind: aesthetic
+  request: "Make this report ready to send to a client: a PDF with page numbers, marked confidential."
+  inputs: {report: report.docx}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_has, terms: ["Quarterly report", "CONFIDENTIAL", "1 / "]}
+  rubric:
+    - "Every page has a page number."
+    - "The word CONFIDENTIAL is visible but does not cover the report's text."
+    - "The report's content itself is unchanged."
+  reference:
+    in: "${report}"
+    ops:
+      - [doc.convert, {}]
+      - [pdf.stamp, {text: "{page} / {pages}", position: bottom_center, size: 9}]
+      - [pdf.stamp, {text: "CONFIDENTIAL", position: top_center, size: 10, color: "#aa0000"}]
+      - [export, {preset: pdf_screen}]
+
+- id: external-contract
+  split: validation
+  kind: aesthetic
+  request: "Prepare this contract to send to an outside party: no personal details in it, and make it clear that it is a draft."
+  inputs: {contract: contract.pdf}
+  graders:
+    - {type: kind, is: pdf}
+    - {type: text_lacks, terms: ["John Smith", "Mary Jones", "123-45-6789", "987-65-4321"]}
+    - {type: text_has, terms: ["DRAFT"]}
+  rubric:
+    - "Names and social security numbers are removed, not just covered."
+    - "The draft marking is clearly visible on every page."
+    - "The rest of the contract is still readable."
+  reference:
+    in: "${contract}"
+    ops:
+      - [pdf.redact, {terms: ["John Smith", "Mary Jones"], patterns: ["\\d{3}-\\d{2}-\\d{4}"]}]
+      - [pdf.stamp, {text: "DRAFT", position: center, size: 96, opacity: 0.2, angle: 45, color: "#ff0000"}]
+      - [export, {preset: pdf_screen}]
+
+- id: tidy-deck
+  split: test
+  kind: aesthetic
+  request: "Add slides for Problem, Solution and Roadmap to this deck, one short bullet each, so it reads like a clean pitch."
+  inputs: {deck: deck_plain.pptx}
+  graders:
+    - {type: kind, is: pptx}
+    - {type: slides, min: 5}
+    - {type: text_has, terms: ["Problem", "Solution", "Roadmap"]}
+  rubric:
+    - "Every new slide has a short title and one short bullet."
+    - "The new slides use the same layout as the deck's other content slides."
+    - "The slide order reads as a pitch: problem, then solution, then roadmap."
+  reference:
+    recipe: slides_from_outline
+    params:
+      in: "${deck}"
+      items:
+        - {layout: "Title and Content", title: "Problem", body: ["Teams lose hours on manual reports"]}
+        - {layout: "Title and Content", title: "Solution", body: ["One tool that builds them in seconds"]}
+        - {layout: "Title and Content", title: "Roadmap", body: ["Pilot in Q3, launch in Q4"]}

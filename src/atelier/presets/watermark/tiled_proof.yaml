@@ -1,0 +1,11 @@
+id: tiled_proof
+version: 1
+kind: watermark
+description: diagonal tiled marks across the whole image (proofs)
+settings:
+  scale: 0.2
+  opacity: 0.22
+  tiled: true
+  angle: -30
+  spacing: 0.6
+  text: {font: Inter, weight: bold, color: "#ffffff"}

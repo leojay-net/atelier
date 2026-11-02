@@ -1,0 +1,10 @@
+id: corner_bold
+version: 1
+kind: watermark
+description: larger, 90% opacity, bottom-right, with outline for busy photos
+settings:
+  anchor: bottom_right
+  margin: 0.03
+  scale: 0.22
+  opacity: 0.9
+  text: {font: Inter, weight: bold, color: "#ffffff", stroke: 0.06, stroke_color: "#000000"}
