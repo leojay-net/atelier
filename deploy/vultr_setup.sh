@@ -31,6 +31,12 @@ ATELIER_MODEL_NAME=llama-3.3-70b-instruct
 VULTR_INFERENCE_BASE_URL=https://api.vultrinference.com/v1
 # Put your Vultr Serverless Inference API Key below:
 VULTR_INFERENCE_API_KEY=${VULTR_INFERENCE_API_KEY:-}
+
+# Optional: Vultr Object Storage (S3-compatible)
+ATELIER_S3_BUCKET=${ATELIER_S3_BUCKET:-}
+ATELIER_S3_ENDPOINT=${ATELIER_S3_ENDPOINT:-https://ewr1.vultrobjects.com}
+VULTR_STORAGE_ACCESS_KEY=${VULTR_STORAGE_ACCESS_KEY:-}
+VULTR_STORAGE_SECRET_KEY=${VULTR_STORAGE_SECRET_KEY:-}
 EOF
     echo "[!] Generated new .env. Please ensure VULTR_INFERENCE_API_KEY is populated."
 fi

@@ -24,6 +24,11 @@ x-atelier: &atelier
     ATELIER_MODEL_NAME: ${ATELIER_MODEL_NAME:-llama-3.3-70b-instruct}
     VULTR_INFERENCE_API_KEY: ${VULTR_INFERENCE_API_KEY:-}
     VULTR_INFERENCE_BASE_URL: ${VULTR_INFERENCE_BASE_URL:-https://api.vultrinference.com/v1}
+    # Optional Vultr Object Storage (S3-compatible durable mirroring):
+    ATELIER_S3_BUCKET: ${ATELIER_S3_BUCKET:-}
+    ATELIER_S3_ENDPOINT: ${ATELIER_S3_ENDPOINT:-https://ewr1.vultrobjects.com}
+    AWS_ACCESS_KEY_ID: ${VULTR_STORAGE_ACCESS_KEY:-${AWS_ACCESS_KEY_ID:-}}
+    AWS_SECRET_ACCESS_KEY: ${VULTR_STORAGE_SECRET_KEY:-${AWS_SECRET_ACCESS_KEY:-}}
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   volumes:
     - atelier-data:/data

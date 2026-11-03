@@ -2,6 +2,33 @@
 
 Running log of implementation against [docs/08-roadmap.md](docs/08-roadmap.md). Newest first within each phase.
 
+## Vultr Agent Rush Hackathon Track
+
+**Target:** [Lablab.ai Vultr: Agent Rush Hackathon](https://lablab.ai/ai-hackathons/vultr-hackathon) (Nov 3 – 8, 2026)  
+**Goal:** Maximize Vultr Cloud infrastructure utilization across compute, inference, object storage, and secure sandboxing, ensuring 100% adherence to all competition requirements and scoring criteria.
+
+### Vultr Infrastructure Matrix
+| Vultr Component | Role in Atelier | Status |
+|---|---|---|
+| **Vultr Cloud Compute (VM)** | Central orchestrator hosting ASGI API, background media workers, and Next.js 16 Web UI | ✅ Automated deploy script & compose ready |
+| **Vultr Serverless Inference** | Powers AI director loop via `https://api.vultrinference.com/v1` (`llama-3.3-70b-instruct`) | ✅ Adapter implemented & unit tested |
+| **Vultr Object Storage** | S3-compatible content-addressed storage for media assets, inputs, and deliverables | ✅ S3Backend configured (`ewr1.vultrobjects.com`) |
+| **Zero-Blast-Radius Sandbox** | Isolated Docker containers (`--network none`, `--read-only`, no caps, execution timeout) | ✅ Implemented & verified via containment test |
+| **Vultr API & Telemetry** | Dynamic model discovery and token/latency efficiency tracking | ✅ Telemetry & CLI stats built-in |
+
+### Hackathon Requirements & Checklist Status
+- [x] **Vultr VM Backend**: Production `docker-compose.yml` and `deploy/vultr_setup.sh` automated provisioning.
+- [x] **Vultr Serverless Inference**: Provider adapter implemented (`src/atelier/agent/providers/__init__.py`), tested (`tests/unit/test_agent_providers_vultr.py`), and integrated into CLI and worker layers.
+- [x] **Sandbox Boundary Layer**: Docker sandbox with `--network none`, `--read-only`, `--cap-drop ALL`, and timeout guards (`src/atelier/evals/sandbox.py`).
+- [x] **Containment Moment Script**: `scripts/demo_containment.py` verifying host safety against destructive commands (`rm -rf /`), infinite loops, and exfiltration attempts.
+- [x] **Public GitHub Repo**: Cleanly structured, open-source repository at `https://github.com/leojay-net/atelier`.
+- [x] **Web Application**: Next.js 16 client in `web/` with multi-step workflows, SSE live progress streaming, and asset management.
+- [ ] **Live Vultr Deployment**: Deploy stack to public Vultr Cloud Compute IP.
+- [ ] **Demo Video Recording**: 3-minute video highlighting the real product flow and the required "Containment Moment".
+- [ ] **Final Submission**: Complete submission on lablab.ai with public URL and architecture breakdown.
+
+---
+
 ## Status at a glance
 
 | Phase | State |
