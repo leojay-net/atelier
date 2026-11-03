@@ -1,18 +1,29 @@
-# One machine, no broker: an API process and workers sharing a volume (SQLite + the stores).
-# Scale out by pointing ATELIER_DB_* at Postgres and running more `worker` containers.
+# One machine deployment for Vultr VM:
+# - API process (Django Ninja, ASGI)
+# - Worker processes (sandboxed media execution)
+# - Web UI (Next.js 16 frontend)
 #
+# Build:
 #   docker build -f docker/Dockerfile -t atelier-ref .
-#   docker build -f docker/app.Dockerfile -t atelier-app .        # from the repository root
-#   ATELIER_SECRET_KEY=$(openssl rand -hex 32) docker compose up -d
-#   docker compose run --rm api manage create_org acme "Acme Studio"     # prints an API key once
-#   curl -H "Authorization: Bearer atk_…" localhost:8000/api/v1/me
+#   docker build -f docker/app.Dockerfile -t atelier-app .
+#   docker build -f web/Dockerfile -t atelier-web ./web
+#
+# Run:
+#   ATELIER_SECRET_KEY=$(openssl rand -hex 32) VULTR_INFERENCE_API_KEY=your_key docker compose up -d
+#   docker compose run --rm api manage create_org acme "Acme Studio"     # prints an API key
+#
+# Add the key to .env (ATELIER_API_KEY=atk_...) for the web UI service.
 
 x-atelier: &atelier
   image: atelier-app
   environment:
     ATELIER_SECRET_KEY: ${ATELIER_SECRET_KEY:?set ATELIER_SECRET_KEY}
-    ATELIER_ALLOWED_HOSTS: ${ATELIER_ALLOWED_HOSTS:-localhost,127.0.0.1}
-    ATELIER_CORS_ORIGINS: ${ATELIER_CORS_ORIGINS:-}
+    ATELIER_ALLOWED_HOSTS: ${ATELIER_ALLOWED_HOSTS:-*}
+    ATELIER_CORS_ORIGINS: ${ATELIER_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    ATELIER_MODEL_CLIENT: ${ATELIER_MODEL_CLIENT:-atelier.api.core.clients.vultr_client}
+    ATELIER_MODEL_NAME: ${ATELIER_MODEL_NAME:-llama-3.3-70b-instruct}
+    VULTR_INFERENCE_API_KEY: ${VULTR_INFERENCE_API_KEY:-}
+    VULTR_INFERENCE_BASE_URL: ${VULTR_INFERENCE_BASE_URL:-https://api.vultrinference.com/v1}
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   volumes:
     - atelier-data:/data
@@ -23,11 +34,25 @@ services:
     command: ["api"]
     ports:
       - "8000:8000"
+
   worker:
     <<: *atelier
     command: ["worker"]
     deploy:
       replicas: 1
+
+  web:
+    image: atelier-web
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      ATELIER_API_BASE: http://api:8000/api/v1
+      ATELIER_API_KEY: ${ATELIER_API_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   atelier-data:

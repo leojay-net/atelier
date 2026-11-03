@@ -29,6 +29,10 @@ def gemini_client() -> ModelAdapter:
     return build_adapter("gemini")
 
 
+def vultr_client() -> ModelAdapter:
+    return build_adapter("vultr")
+
+
 def object_backend() -> ObjectBackend | None:
     """The durable object store to mirror each organization's store to, if one is configured."""
     from django.conf import settings

@@ -132,7 +132,21 @@ def cmd_ask(engine: Engine, args: argparse.Namespace) -> int:
     from atelier.cli import EXIT_FAILED, EXIT_INVALID, _asset, _fail
     from atelier.media import HandleError
 
-    config = AgentConfig(model=args.model, effort=args.effort, fallbacks=not args.no_fallbacks)
+    model = args.model
+    if args.provider == "vultr" and model == DEFAULT_MODEL:
+        import os
+        model = os.environ.get("VULTR_MODEL", "llama-3.3-70b-instruct")
+    elif args.provider == "openai" and model == DEFAULT_MODEL:
+        import os
+        model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    elif args.provider == "ollama" and model == DEFAULT_MODEL:
+        import os
+        model = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
+    elif args.provider == "gemini" and model == DEFAULT_MODEL:
+        import os
+        model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+
+    config = AgentConfig(model=model, effort=args.effort, fallbacks=not args.no_fallbacks)
     telemetry = Telemetry(engine.home / "telemetry")
     plan_cache = None if args.no_plan_cache else PlanCache(engine.home / "plans")
     out_dir = Path(args.out)

@@ -15,7 +15,7 @@ from atelier.agent.client import MissingCredentials
 from atelier.agent.providers.anthropic import AnthropicAdapter
 from atelier.agent.providers.base import ModelAdapter
 
-PROVIDERS = ("anthropic", "openai", "gemini", "ollama")
+PROVIDERS = ("anthropic", "openai", "gemini", "ollama", "vultr")
 
 
 def build_adapter(provider: str, *, fallbacks: bool = True) -> ModelAdapter:
@@ -31,6 +31,8 @@ def build_adapter(provider: str, *, fallbacks: bool = True) -> ModelAdapter:
         return _ollama_adapter()
     if provider == "gemini":
         return _gemini_adapter()
+    if provider == "vultr":
+        return _vultr_adapter()
     raise ValueError(f"unknown provider {provider!r}; choose one of {PROVIDERS}")
 
 
@@ -63,6 +65,30 @@ def _ollama_adapter() -> ModelAdapter:
         ) from None
     base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     client = openai.OpenAI(base_url=base_url, api_key="ollama")  # no real key needed
+    return OpenAICompatibleAdapter(client)
+
+
+def _vultr_adapter() -> ModelAdapter:
+    """Vultr Serverless Inference: OpenAI-compatible API at `https://api.vultrinference.com/v1`.
+    Key is configured via `VULTR_INFERENCE_API_KEY` (or `VULTR_API_KEY`)."""
+    from atelier.agent.providers.openai_compatible import OpenAICompatibleAdapter
+
+    try:
+        import openai
+    except ImportError:
+        raise MissingCredentials(
+            "the Vultr provider needs the 'openai' extra: install atelier[openai]"
+        ) from None
+    base_url = os.environ.get("VULTR_INFERENCE_BASE_URL", "https://api.vultrinference.com/v1")
+    api_key = os.environ.get("VULTR_INFERENCE_API_KEY") or os.environ.get("VULTR_API_KEY")
+    if not api_key:
+        raise MissingCredentials(
+            "no Vultr credentials: set VULTR_INFERENCE_API_KEY or VULTR_API_KEY"
+        ) from None
+    try:
+        client = openai.OpenAI(base_url=base_url, api_key=api_key)
+    except openai.OpenAIError as e:
+        raise MissingCredentials(f"invalid Vultr configuration: {e}") from None
     return OpenAICompatibleAdapter(client)
 
 
