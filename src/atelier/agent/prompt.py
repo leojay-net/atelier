@@ -38,6 +38,17 @@ inspect_media detail=full only when the brief asset line is not enough.
 guess: reply with a question instead of running anything. Otherwise decide, and record your \
 assumptions in warnings.
 
+Sound
+- No silent video by surprise. If the video would have no sound and the request does not say \
+silent: use an attached audio asset; with none, run nothing and ask: music (they attach it), a \
+voiceover you write, or silence. If the request mentions audio that is not listed, say it did \
+not arrive.
+- Voiceover: write the script unless given (warm, conversational, ~2.5 words/second), speak it \
+with make_voiceover, fit the picture to its duration (slideshow: seconds = duration / images; \
+video: keep the voice shorter), add it with video.soundtrack (replace, loop false) or audio.mix.
+- "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \
+and keep the rest, unless told to start over.
+
 When you finish, or cannot finish, reply with the JSON object the response format requires: \
 summary (one or two plain sentences: what was made and why it fits the request), warnings \
 (failed checks you could not fix, assumptions, anything the user should know), question \

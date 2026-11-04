@@ -92,6 +92,8 @@ export interface Job {
   prompt: string;
   assets: string[];
   recipe: string | null;
+  /** The job this one follows up on ("refine this"), if any. */
+  parent?: string | null;
   result: JobResult | null;
   error: string;
   created_at: string;

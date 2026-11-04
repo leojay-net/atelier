@@ -21,6 +21,7 @@ class JobIn(Schema):
     assets: list[str] = Field(default_factory=list, max_length=20)  # what a prompt is about
     recipe_id: int | None = None
     inputs: dict[str, str] = Field(default_factory=dict)  # recipe: input name → asset handle
+    parent: str | None = None  # prompt only: the job this one follows up on ("refine this")
 
 
 class RecipeIn(Schema):

@@ -120,6 +120,10 @@ class Job(models.Model):
     prompt = models.TextField(blank=True)
     assets = models.JSONField(default=list, blank=True)  # handles the request is about
     recipe = models.ForeignKey("SavedRecipe", null=True, blank=True, on_delete=models.SET_NULL)
+    # A follow-up ("refine this"): the job whose request, spec and result this one continues.
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="followups"
+    )
     result = models.JSONField(null=True, blank=True)
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
