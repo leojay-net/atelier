@@ -7,12 +7,12 @@ one graph, so the clips are decoded once and the result is encoded once.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
 from atelier.av.graph import Graph, Stream, num
-from atelier.av.ops import video_op
+from atelier.av.ops import _ANCHOR, Anchor, _even, video_op
 from atelier.media import MediaType
 from atelier.ops.registry import OpError, Params
 from atelier.spec.types import Timecode
@@ -20,6 +20,20 @@ from atelier.spec.types import Timecode
 MAX_CLIPS = 24
 SAMPLE_RATE = 48000
 FPS_TOLERANCE = 0.01
+
+TransitionStyle = Literal[
+    "fade",
+    "wipeleft",
+    "wiperight",
+    "slideleft",
+    "slideright",
+    "circlecrop",
+    "dissolve",
+    "fadeblack",
+    "fadewhite",
+    "smoothleft",
+    "smoothright",
+]
 
 
 class ConcatParams(Params):
@@ -30,6 +44,11 @@ class ConcatParams(Params):
     )
     fade: Timecode = Field(
         0.0, ge=0, le=5, description="crossfade between clips in seconds; 0 is a hard cut"
+    )
+    transition: TransitionStyle = Field(
+        "fade",
+        description="transition effect when fade > 0: fade, wipeleft, wiperight, slideleft, "
+        "slideright, circlecrop, dissolve, fadeblack, fadewhite, smoothleft, smoothright",
     )
 
 
@@ -95,7 +114,12 @@ def _sound(g: Graph, clip: Stream) -> str:
 
 
 def _join(
-    g: Graph, pictures: list[str], sounds: list[str], durations: list[float], fade: float
+    g: Graph,
+    pictures: list[str],
+    sounds: list[str],
+    durations: list[float],
+    fade: float,
+    transition: str = "fade",
 ) -> float:
     """Play the conformed pictures (and sounds, if any) one after another; returns the length.
     Sets `g.video` and `g.audio`."""
@@ -122,7 +146,7 @@ def _join(
     for k in range(1, n):
         (video,) = g.add(
             "xfade",
-            {"transition": "fade", "duration": num(fade), "offset": num(elapsed - fade)},
+            {"transition": transition, "duration": num(fade), "offset": num(elapsed - fade)},
             ins=[video, pictures[k]],
             prefix="v",
         )
@@ -164,7 +188,7 @@ def concat(g: Graph, p: ConcatParams) -> None:
     has_sound = any(c.audio is not None for c in clips)
     sounds = [_sound(g, c) for c in clips] if has_sound else []
     durations = [c.duration or 0.0 for c in clips]
-    total = _join(g, pictures, sounds, durations, p.fade)
+    total = _join(g, pictures, sounds, durations, p.fade, p.transition)
     g.width, g.height, g.fps = size[0], size[1], fps
     g.duration = total
     g.sample_rate, g.channels = (SAMPLE_RATE, 2) if g.audio else (0, 0)
@@ -296,3 +320,173 @@ def soundtrack(g: Graph, p: SoundtrackParams) -> None:
         )  # fmt: skip
     g.audio = a
     g.sample_rate, g.channels = SAMPLE_RATE, 2
+
+
+# -- picture in picture ------------------------------------------------------------------------
+
+
+class PipParams(Params):
+    scale: float = Field(
+        0.3,
+        ge=0.05,
+        le=0.9,
+        description="width of the PiP video as a fraction of the main frame width",
+    )
+    anchor: Anchor = Field(
+        "bottom_right",
+        description="position anchor: top_left, top_right, bottom_left, bottom_right, center, etc.",
+    )
+    margin: float = Field(
+        0.04,
+        ge=0.0,
+        le=0.25,
+        description="margin from the video edges as a fraction of main frame width",
+    )
+    opacity: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        description="opacity of the PiP window (1.0 = opaque)",
+    )
+    start: Timecode = Field(
+        0.0,
+        ge=0,
+        description="start timestamp in seconds when PiP appears",
+    )
+    end: Timecode | None = Field(
+        None,
+        ge=0,
+        description="end timestamp in seconds when PiP disappears (None = until end of video)",
+    )
+    audio: Literal["mix", "main_only", "pip_only"] = Field(
+        "mix",
+        description="audio mode: mix both tracks, or keep only main or pip audio",
+    )
+    pip_volume: float = Field(
+        0.8,
+        ge=0.0,
+        le=2.0,
+        description="relative volume of the PiP audio track when mixed",
+    )
+
+
+@video_op(
+    name="video.pip",
+    version="1.0.0",
+    params=PipParams,
+    inputs=(MediaType.VIDEO, MediaType.VIDEO),
+    description="overlay a second video (facecam/reaction) as picture-in-picture",
+)
+def pip(g: Graph, p: PipParams) -> None:
+    """Overlay a second video (the second input) as a picture-in-picture window on top of
+    the main video. Supports fractional scale, anchor positioning, margin, opacity, start/end
+    time ranges, and audio mixing."""
+    pip_stream = g.extra_stream(0)
+    if pip_stream.video is None:
+        raise OpError("the second input has no video stream to overlay as picture-in-picture")
+
+    pw = _even(g.width * p.scale)
+    if pip_stream.width > 0 and pip_stream.height > 0:
+        ph = _even(pw * pip_stream.height / pip_stream.width)
+    else:
+        ph = _even(g.height * p.scale)
+    pw, ph = max(2, pw), max(2, ph)
+
+    margin = round(g.width * p.margin)
+    fx, fy = _ANCHOR[p.anchor]
+    x = round(fx * (g.width - pw - 2 * margin)) + margin
+    y = round(fy * (g.height - ph - 2 * margin)) + margin
+
+    v_pip = pip_stream.video
+    (v_pip,) = g.add("scale", {"w": pw, "h": ph, "flags": "lanczos"}, ins=[v_pip], prefix="v")
+    (v_pip,) = g.add("setsar", {"sar": 1}, ins=[v_pip], prefix="v")
+    (v_pip,) = g.add("setpts", {"expr": "PTS-STARTPTS"}, ins=[v_pip], prefix="v")
+    (v_pip,) = g.add("fps", {"fps": num(g.fps)}, ins=[v_pip], prefix="v")
+
+    if p.opacity < 1.0:
+        (v_pip,) = g.add("format", {"pix_fmts": "rgba"}, ins=[v_pip], prefix="v")
+        (v_pip,) = g.add("colorchannelmixer", {"aa": p.opacity}, ins=[v_pip], prefix="v")
+    else:
+        (v_pip,) = g.add("format", {"pix_fmts": "yuv420p"}, ins=[v_pip], prefix="v")
+
+    args: dict[str, Any] = {"x": x, "y": y}
+    if p.start > 0 or p.end is not None:
+        window = (
+            f"gte(t,{num(p.start)})"
+            if p.end is None
+            else f"between(t,{num(p.start)},{num(p.end)})"
+        )
+        args["enable"] = window
+
+    assert g.video is not None
+    (g.video,) = g.add("overlay", args, ins=[g.video, v_pip], prefix="v")
+
+    # Audio handling
+    if p.audio == "pip_only":
+        if pip_stream.audio is not None:
+            g.audio = _sound(g, pip_stream)
+    elif p.audio == "mix" and pip_stream.audio is not None:
+        pip_a = _sound(g, pip_stream)
+        if p.pip_volume != 1.0:
+            (pip_a,) = g.add("volume", {"volume": p.pip_volume}, ins=[pip_a], prefix="a")
+        if g.audio is not None:
+            (g.audio,) = g.add(
+                "amix",
+                {"inputs": 2, "duration": "first", "normalize": False},
+                ins=[g.audio, pip_a],
+                prefix="a",
+            )
+        else:
+            g.audio = pip_a
+
+
+# -- transition --------------------------------------------------------------------------------
+
+
+class TransitionParams(Params):
+    transition: TransitionStyle = Field(
+        "fade",
+        description="transition effect: fade, wipeleft, wiperight, slideleft, etc.",
+    )
+    duration: Timecode = Field(
+        1.0, ge=0.1, le=5.0, description="duration of the transition in seconds"
+    )
+    mode: Literal["fit", "fill"] = Field(
+        "fit",
+        description="how to conform clips of different frame sizes: fit pads, fill crops",
+    )
+
+
+@video_op(
+    name="video.transition",
+    version="1.0.0",
+    params=TransitionParams,
+    inputs=(MediaType.VIDEO, MediaType.VIDEO),
+    description="transition between two clips (crossfade, wipe, slide, dissolve)",
+)
+def transition_op(g: Graph, p: TransitionParams) -> None:
+    first_stream = Stream(
+        video=g.video,
+        audio=g.audio,
+        width=g.width,
+        height=g.height,
+        fps=g.fps,
+        duration=g.duration,
+        sample_rate=g.sample_rate,
+        channels=g.channels,
+    )
+    second_stream = g.extra_stream(0)
+    d1 = first_stream.duration or 0.0
+    d2 = second_stream.duration or 0.0
+    if d1 <= p.duration or d2 <= p.duration:
+        raise OpError(f"both clips must be longer than transition duration ({p.duration:g}s)")
+
+    target_size = (g.width, g.height)
+    v1 = _conform(g, first_stream, p.mode, target_size, g.fps)
+    v2 = _conform(g, second_stream, p.mode, target_size, g.fps)
+    sounds: list[str] = []
+    if first_stream.audio is not None or second_stream.audio is not None:
+        sounds = [_sound(g, first_stream), _sound(g, second_stream)]
+
+    total = _join(g, [v1, v2], sounds, [d1, d2], p.duration, p.transition)
+    g.duration = total
