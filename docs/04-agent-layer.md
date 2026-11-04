@@ -182,3 +182,21 @@ Headline metrics:
 - **Cache-read ratio** of the prefix (target ≥ 90% after warm-up)
 - **First-pass check rate**: jobs whose first `run_pipeline` passes all checks (target ≥ 85%)
 - **Images per job** (target median 0)
+
+
+## 4.x Voiceovers and follow-ups (2026-11-04)
+
+- **`make_voiceover(text, voice)`**: a fifth tool. The trusted worker process (which holds the
+  inference key) sends the script to Vultr Serverless Inference text-to-speech
+  (`qwen3-tts-12hz-1.7b`; voices serena (default), vivian, ryan, eric, dylan, aiden, uncle_fu),
+  split at sentence ends into requests of at most 600 characters, joins the parts into one MP3
+  and stores it as an ordinary audio asset. The tool returns its handle and exact duration; the
+  model then uses existing ops (`video.soundtrack`, `audio.mix` with ducking). Step sandboxes
+  still get no credentials, and the engine stays deterministic: the voice is a content-addressed
+  input like any upload. At most 4 voiceovers and 4000 characters per call per job.
+- **Sound rule**: the model must not deliver a silent video by surprise. With no audio attached
+  and no instruction, it asks (music, a voiceover it writes, or silence); if the request mentions
+  audio that is not attached, it says so.
+- **Follow-ups**: a job may name a `parent`. The worker prefixes the request with what the
+  earlier job was asked, made, asked back, and its spec, and adds its outputs and inputs to the
+  assets. The web UI's "Refine this result" box (and the answer box for questions) uses it.

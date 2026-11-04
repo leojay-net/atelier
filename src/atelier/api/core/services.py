@@ -234,6 +234,7 @@ def job_dict(job: Job, *, events: bool = False) -> dict[str, Any]:
         "prompt": job.prompt,
         "assets": job.assets,
         "recipe": job.recipe.name if job.recipe else None,
+        "parent": str(job.parent_id) if job.parent_id else None,
         "result": job.result,
         "error": job.error,
         "created_at": job.created_at,

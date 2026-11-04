@@ -1,4 +1,4 @@
-"""The four tools (docs/04 §4.2) and the dispatcher that runs them against the engine.
+"""The five tools (docs/04 §4.2, plus make_voiceover) and the dispatcher that runs them.
 
 Definitions are sorted by name and built from constants only, so the serialized tool list is
 byte-stable across processes and releases (it is the first thing in the cached prefix).
@@ -16,13 +16,18 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from atelier.agent.budget import Budget
+from atelier.agent.voice import DEFAULT_VOICE, MAX_CHARS, VOICES, VoiceError, VoiceService, chunks
+from atelier.av.binaries import find
 from atelier.engine.engine import Engine, format_plan, format_result
 from atelier.engine.runner import JobResult, StepFailed
-from atelier.media import HandleError
+from atelier.media import HandleError, MediaType
 from atelier.ops.catalogue import describe_name
 from atelier.presets import all_presets
 from atelier.recipes import all_recipes
@@ -30,6 +35,7 @@ from atelier.spec.errors import SpecInvalid, closest
 
 MAX_ASSETS_PER_CALL = 20
 MAX_NAMES_PER_CALL = 12
+MAX_VOICEOVERS = 4  # per job
 
 PREVIEW_KINDS = {"thumb": "thumb", "crop": "crop", "compare": "compare", "contact_sheet": "sheet"}
 MEDIA_TYPES = {
@@ -69,6 +75,23 @@ TOOLS: list[dict[str, Any]] = sorted(
                     "detail": {"type": "string", "enum": ["brief", "full"]},
                 },
                 "required": ["assets"],
+            },
+            strict=True,
+        ),
+        _tool(
+            "make_voiceover",
+            "Speak a script aloud with a natural, human-sounding AI voice and get it back as a "
+            "new audio asset (handle and exact duration). Write the narration yourself when the "
+            "user asks for a voiceover without giving the words: plain, conversational "
+            "sentences, about 2.5 words per second of video. Then put it on the video with "
+            "video.soundtrack (mode replace, loop false) or under existing sound with audio.mix. "
+            f"voice: one of {', '.join(f'{k} ({v})' for k, v in VOICES.items())}.",
+            {
+                "properties": {
+                    "text": {"type": "string", "description": "the exact words to speak"},
+                    "voice": {"type": "string", "enum": sorted(VOICES)},
+                },
+                "required": ["text", "voice"],
             },
             strict=True,
         ),
@@ -138,8 +161,10 @@ class RunAttempt:
 class Toolbox:
     engine: Engine
     budget: Budget
+    voice: VoiceService | None = None
     attempts: list[RunAttempt] = field(default_factory=list)
     calls: list[str] = field(default_factory=list)
+    generated: list[str] = field(default_factory=list)  # handles of assets the tools made
 
     # -- results the loop reads back ------------------------------------------------------
 
@@ -162,6 +187,7 @@ class Toolbox:
         handler = {
             "describe_op": self._describe_op,
             "inspect_media": self._inspect_media,
+            "make_voiceover": self._make_voiceover,
             "preview": self._preview,
             "run_pipeline": self._run_pipeline,
         }.get(name)
@@ -208,6 +234,74 @@ class Toolbox:
         if len(handles) > MAX_ASSETS_PER_CALL:
             lines.append(f"… {len(handles) - MAX_ASSETS_PER_CALL} more assets ignored (max 20)")
         return ToolOutcome("\n".join(lines), is_error=error)
+
+    def _make_voiceover(self, args: dict[str, Any]) -> ToolOutcome:
+        text = " ".join(str(args.get("text") or "").split())
+        voice = args.get("voice") or DEFAULT_VOICE
+        if not text:
+            return ToolOutcome("make_voiceover: text must not be empty", is_error=True)
+        if len(text) > MAX_CHARS:
+            return ToolOutcome(
+                f"make_voiceover: the script is {len(text)} characters; keep it under "
+                f"{MAX_CHARS} (about 4 minutes of speech)",
+                is_error=True,
+            )
+        if voice not in VOICES:
+            return ToolOutcome(
+                f"make_voiceover: unknown voice {voice!r}; use one of {', '.join(VOICES)}",
+                is_error=True,
+            )
+        if self.voice is None:
+            return ToolOutcome(
+                "make_voiceover: voiceovers are not available on this server (no voice "
+                "service configured); tell the user instead",
+                is_error=True,
+            )
+        if len(self.generated) >= MAX_VOICEOVERS:
+            return ToolOutcome(
+                f"make_voiceover: at most {MAX_VOICEOVERS} voiceovers per request; reuse one",
+                is_error=True,
+            )
+        try:
+            info = self._speak(text, voice)
+        except (VoiceError, subprocess.CalledProcessError, OSError) as e:
+            return ToolOutcome(f"make_voiceover: {e}", is_error=True)
+        self.generated.append(info.handle)
+        duration = self.engine.probe(info).get("duration") or 0.0
+        return ToolOutcome(
+            f"{info.handle} · audio · voiceover {duration:.2f}s · voice {voice} · "
+            f"{len(text.split())} words"
+        )
+
+    def _speak(self, text: str, voice: str) -> Any:
+        """One MP3 from the whole script: each chunk spoken, then joined and re-encoded once
+        so the file has a single clean header and an exact duration."""
+        assert self.voice is not None
+        work = Path(tempfile.mkdtemp(prefix="voice-", dir=self.engine.store.tmp))
+        parts = []
+        for i, chunk in enumerate(chunks(text)):
+            part = work / f"part{i:03d}.mp3"
+            part.write_bytes(self.voice.speak(chunk, voice))
+            parts.append(part)
+        listing = work / "parts.txt"
+        listing.write_text("".join(f"file '{p.name}'\n" for p in parts), encoding="utf-8")
+        out = work / "voiceover.mp3"
+        subprocess.run(
+            [
+                find("ffmpeg"), "-hide_banner", "-nostdin", "-v", "error", "-y",
+                "-f", "concat", "-safe", "0", "-i", str(listing),
+                "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-map_metadata", "-1",
+                str(out),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=300,
+        )  # fmt: skip
+        info = self.engine.store.put_file(out, media=MediaType.AUDIO, ext=".mp3", move=True)
+        for p in [*parts, listing]:
+            p.unlink(missing_ok=True)
+        work.rmdir()
+        return info
 
     def _preview(self, args: dict[str, Any]) -> ToolOutcome:
         kind, handles = args.get("kind"), _strings(args.get("assets"))

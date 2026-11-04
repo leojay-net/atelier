@@ -45,7 +45,7 @@ Or `docker compose up` (see `docker-compose.yml`). Settings are environment vari
             "passed": true, "seconds": 1.2, "summary": "…", "warnings": [], "question": ""},
  "error": "", "units": 0.0, "compute_seconds": 1.2, "spec": {…}}
 ```
-`needs_input` means the agent asked a question (`result.question`); answer by starting a new job. `checks_failed` finished but a check still fails; the hints say how to fix it. Output handles are assets: download them from `/assets/{handle}/content`.
+`needs_input` means the agent asked a question (`result.question`); answer it, or refine any finished job, with a follow-up: `POST /jobs {prompt, assets, parent: <job id>}`. The agent then sees the earlier request, its summary, question and spec, and gets the earlier outputs and inputs as assets (new `assets` first), so it edits that result instead of starting over. `parent` must be a finished job of your organization (`404` otherwise, `409` while it runs). `checks_failed` finished but a check still fails; the hints say how to fix it. Output handles are assets: download them from `/assets/{handle}/content`.
 
 ## Progress events
 `{seq, kind, data, at}` with kinds `started`, `plan` (`groups`, `steps`), `step_start` and `step_done` (`step`, `op`, `index`, `groups`, `cached`, `seconds`, `summary`), `turn` and `tools` (agent jobs), and `finished` (`status`). The stream ends with an `end` event once the job has finished and everything was sent.

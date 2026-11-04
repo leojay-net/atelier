@@ -289,9 +289,17 @@ def create_job(request: HttpRequest, body: JobIn) -> Status[dict[str, Any]]:
             raise ApiError(422, "bad_request", "the prompt is empty")
         kind, prompt = "prompt", body.prompt.strip()
         handles = [_resolve(engine, h).handle for h in body.assets]
+    parent: Job | None = None
+    if body.parent is not None:
+        if kind != "prompt":
+            raise ApiError(422, "bad_request", "only a prompt job can follow up on another job")
+        parent = _job(request, body.parent)
+        if not parent.finished:
+            raise ApiError(409, "parent_running", "wait for that job to finish, then refine it")
     services.check_rate(request.api_key)  # type: ignore[attr-defined]
     services.check_quota(org)
     job = Job.objects.create(
+        parent=parent,
         org=org,
         created_by=request.api_key,  # type: ignore[attr-defined]
         kind=kind,

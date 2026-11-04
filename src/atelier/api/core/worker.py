@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import json
 import logging
 import time
 import uuid
@@ -27,6 +28,7 @@ from atelier.agent.loop import Job as AgentJob
 from atelier.agent.loop import run_job as run_agent
 from atelier.agent.plan_cache import PlanCache
 from atelier.agent.telemetry import Telemetry
+from atelier.agent.voice import VoiceService
 from atelier.api.core import services
 from atelier.api.core.models import Job
 from atelier.engine.engine import Engine
@@ -40,6 +42,12 @@ ClientFactory = Callable[[], Any]
 def _client_factory() -> ClientFactory:
     module, _, name = settings.ATELIER_MODEL_CLIENT.rpartition(".")
     factory: ClientFactory = getattr(importlib.import_module(module), name)
+    return factory
+
+
+def _voice_factory() -> Callable[[], VoiceService | None]:
+    module, _, name = settings.ATELIER_VOICE_CLIENT.rpartition(".")
+    factory: Callable[[], VoiceService | None] = getattr(importlib.import_module(module), name)
     return factory
 
 
@@ -127,10 +135,37 @@ def _agent_outcome(job: Job, engine: Engine, res: AgentResult) -> Job:
     return _finish(job, Job.FAILED, error=f"{reason}: {res.detail}".strip(": "), **fields)
 
 
+def followup_context(job: Job) -> tuple[str, list[str]]:
+    """For a follow-up ("refine this"): what the earlier request asked and produced, as text
+    for the model, and the earlier outputs and inputs, which become assets of this request."""
+    parent = job.parent
+    if parent is None:
+        return "", []
+    result = parent.result or {}
+    outputs = [o["handle"] for o in (result.get("outputs") or {}).values() if o.get("handle")]
+    lines = ["Follow-up to an earlier request in this conversation."]
+    lines.append(f"Earlier request: {parent.prompt or '(a pipeline spec, no prompt)'}")
+    if result.get("summary"):
+        lines.append(f"What you made then: {result['summary']}")
+    if result.get("question"):
+        lines.append(f"You asked then: {result['question']} (this request answers it)")
+    if parent.error:
+        lines.append(f"It failed then: {parent.error}")
+    if outputs:
+        lines.append(
+            "Earlier result (edit this one unless asked to start over): " + ", ".join(outputs)
+        )
+    if parent.spec:
+        spec = json.dumps(parent.spec, separators=(",", ":"), ensure_ascii=False)
+        lines.append(f"Earlier spec: {spec[:3000]}")
+    return "\n".join(lines), [*outputs, *parent.assets]
+
+
 def _run_prompt(job: Job, engine: Engine) -> Job:
-    prompt = job.prompt
+    context, earlier = followup_context(job)
+    prompt = f"{context}\n\nNow: {job.prompt}" if context else job.prompt
     kit = brand_kit_text(job)
-    handles = list(job.assets)
+    handles = list(dict.fromkeys([*job.assets, *earlier]))[:20]  # new files first, no repeats
     if kit:
         prompt = f"{prompt}\n\n{kit}"
         handles += [
@@ -146,7 +181,12 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
         config=AgentConfig(model=settings.ATELIER_MODEL_NAME or DEFAULT_MODEL),
         telemetry=telemetry,
         plan_cache=PlanCache(engine.home / "plans"),
+        voice=_voice_factory()(),
     )
+    for handle in res.generated:  # voiceovers: show them in the user's assets too
+        services.register_asset(
+            job.org, engine.store.resolve(handle), filename="voiceover.mp3", origin=job
+        )
     return _agent_outcome(job, engine, res)
 
 
@@ -156,7 +196,7 @@ def execute(job_id: uuid.UUID) -> Job:
     claimed = Job.objects.filter(pk=job_id, status=Job.QUEUED).update(
         status=Job.RUNNING, started_at=now, heartbeat_at=now
     )
-    job = Job.objects.select_related("org", "recipe").get(pk=job_id)
+    job = Job.objects.select_related("org", "recipe", "parent").get(pk=job_id)
     if not claimed:
         return job  # someone else has it, or it was cancelled while it waited
     services.emit(job, "started", {"kind": job.kind})

@@ -26,6 +26,7 @@ from atelier.agent.providers.anthropic import AnthropicAdapter
 from atelier.agent.providers.base import ModelAdapter, Turn
 from atelier.agent.telemetry import JobRecord, RequestRecord, Telemetry
 from atelier.agent.tools import TOOLS, Toolbox
+from atelier.agent.voice import VoiceService
 from atelier.engine.engine import BatchItem, Engine
 from atelier.engine.runner import JobResult, StepFailed
 from atelier.media import AssetInfo, HandleError
@@ -56,6 +57,7 @@ class AgentResult:
     spec: Any = None  # the spec that produced `outputs`
     engine_result: JobResult | None = None
     record: JobRecord | None = None
+    generated: tuple[str, ...] = ()  # handles of assets the tools made (voiceovers)
 
     @property
     def ok(self) -> bool:
@@ -71,6 +73,7 @@ def run_job(
     config: AgentConfig,
     telemetry: Telemetry | None = None,
     plan_cache: PlanCache | None = None,
+    voice: VoiceService | None = None,
 ) -> AgentResult:
     """`client` (today's Anthropic-shaped `MessagesClient`) or `adapter` (any `ModelAdapter`,
     `providers/`), not both. `client` stays for every existing caller: it is wrapped in
@@ -92,7 +95,9 @@ def run_job(
     started = time.perf_counter()
     counted = True
     try:
-        result = _run(job, infos, system, version, record, engine, adapter, config, plan_cache)
+        result = _run(
+            job, infos, system, version, record, engine, adapter, config, plan_cache, voice
+        )
         record.status = result.status
         result.record = record
         return result
@@ -115,6 +120,7 @@ def _run(
     adapter: ModelAdapter,
     config: AgentConfig,
     plan_cache: PlanCache | None,
+    voice: VoiceService | None = None,
 ) -> AgentResult:
     key = plan_key(job.prompt, (i.hash for i in infos), version, config.model)
     if plan_cache is not None and (hit := _replay(plan_cache, key, engine)) is not None:
@@ -122,7 +128,7 @@ def _run(
         return hit
 
     budget = Budget(config.limits)
-    toolbox = Toolbox(engine, budget)
+    toolbox = Toolbox(engine, budget, voice=voice)
     history = adapter.initial_history(_user_text(job, infos, engine))
     max_tokens, retried = config.max_tokens, False
 
@@ -140,6 +146,7 @@ def _run(
             outputs=_outputs(best.result) if best and best.result else {},
             spec=best.spec if best else None,
             engine_result=best.result if best else None,
+            generated=tuple(toolbox.generated),
         )
 
     while True:

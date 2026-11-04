@@ -23,3 +23,10 @@ backend: Any = None  # set by a test to make every organization's store mirror s
 
 def object_backend() -> Any:
     return backend
+
+
+voice: Any = None  # set by a test to a fake VoiceService; None means "no voice service"
+
+
+def voice_client() -> Any:
+    return voice

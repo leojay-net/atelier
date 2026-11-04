@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { RotateCcw, Send, Ban } from "lucide-react";
+import Link from "next/link";
+import { RotateCcw, Ban, CornerUpLeft } from "lucide-react";
 import type { Job } from "@/lib/types";
 import { useJobLive } from "@/hooks/useJobLive";
 import { JobStatusBanner } from "./JobStatusBanner";
@@ -10,63 +11,15 @@ import { EventTimeline } from "./EventTimeline";
 import { ResultPreview } from "./ResultPreview";
 import { ChecksList } from "./ChecksList";
 import { SaveAsRecipeDialog } from "./SaveAsRecipeDialog";
+import { RefinePanel } from "./RefinePanel";
 import { Button } from "@/components/ui/Button";
 import { ErrorBanner } from "@/components/errors/ErrorBanner";
-import { readApiError } from "@/lib/errors";
 
 export const RETRY_STORAGE_KEY = "atelier:retry";
 
 interface JobDetailProps {
   jobId: string;
   initialJob: Job;
-}
-
-function NeedsInputPanel({ job }: { job: Job }) {
-  const router = useRouter();
-  const [answer, setAnswer] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function send() {
-    if (!answer.trim()) return;
-    setSending(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/proxy/jobs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: answer, assets: job.assets }),
-      });
-      if (!res.ok) throw new Error((await readApiError(res)).message);
-      const next: Job = await res.json();
-      router.push(`/jobs/${next.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send the answer.");
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="space-y-3 rounded-md border border-status-needs-input/30 bg-status-needs-input/5 p-4">
-      <p className="text-[14px] font-medium text-fg">{job.result?.question}</p>
-      <div className="space-y-2">
-        <textarea
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          placeholder="Your answer"
-          rows={3}
-          className="w-full resize-none rounded-sm border border-border-strong bg-bg px-3 py-2 text-[13px] text-fg outline-none focus:border-accent"
-        />
-        {error ? <ErrorBanner message={error} /> : null}
-        <div className="flex justify-end">
-          <Button size="sm" loading={sending} disabled={!answer.trim()} onClick={send}>
-            <Send size={14} />
-            Send
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function TryAgainButton({ job }: { job: Job }) {
@@ -119,7 +72,25 @@ export function JobDetail({ jobId, initialJob }: JobDetailProps) {
         ) : null}
       </div>
 
-      {job.status === "needs_input" ? <NeedsInputPanel job={job} /> : null}
+      {job.parent ? (
+        <Link
+          href={`/jobs/${job.parent}`}
+          className="inline-flex items-center gap-1.5 text-[12px] text-fg-secondary hover:text-fg"
+        >
+          <CornerUpLeft size={13} />
+          Follow-up to an earlier request
+        </Link>
+      ) : null}
+
+      {job.prompt ? (
+        <p className="rounded-md border border-border bg-bg-subtle px-4 py-3 text-[13px] text-fg">
+          {job.prompt}
+        </p>
+      ) : null}
+
+      {job.status === "needs_input" ? (
+        <RefinePanel key={job.id} job={job} question={job.result?.question} />
+      ) : null}
 
       {job.status === "failed" ? (
         <div className="space-y-3">
@@ -145,6 +116,10 @@ export function JobDetail({ jobId, initialJob }: JobDetailProps) {
         <div className="flex justify-end">
           <SaveAsRecipeDialog jobId={jobId} />
         </div>
+      ) : null}
+
+      {job.status === "succeeded" || job.status === "checks_failed" || job.status === "failed" ? (
+        <RefinePanel key={job.id} job={job} />
       ) : null}
     </div>
   );

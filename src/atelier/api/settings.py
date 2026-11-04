@@ -138,6 +138,10 @@ ATELIER_MODEL_CLIENT = os.environ.get(
 # "llama3.1:8b-instruct-q4_K_M" for ollama_client, "gpt-4o" for openai_client, "gemini-2.5-flash"
 # for gemini_client.
 ATELIER_MODEL_NAME = os.environ.get("ATELIER_MODEL_NAME", "")
+# A factory: () -> VoiceService | None, for the agent's make_voiceover tool (Vultr TTS).
+ATELIER_VOICE_CLIENT = os.environ.get(
+    "ATELIER_VOICE_CLIENT", "atelier.agent.voice.from_environment"
+)
 ATELIER_JOB_WALL_SECONDS = 600.0
 ATELIER_STALE_JOB_SECONDS = 900.0  # a running job with no heartbeat for this long is failed
 DATA_UPLOAD_MAX_MEMORY_SIZE = ATELIER_MAX_UPLOAD_BYTES
