@@ -11,6 +11,7 @@ import {
   Loader2,
   Paperclip,
   Plus,
+  Presentation,
   SendHorizonal,
   Sparkles,
   UploadCloud,
@@ -25,6 +26,7 @@ import { contentUrl } from "@/components/media/MediaPreview";
 import { activityLines, friendlyGroup } from "@/lib/activity";
 import { readApiError } from "@/lib/errors";
 import { RETRY_STORAGE_KEY } from "@/components/jobs/JobDetail";
+import { CHATS_CHANGED_EVENT, NEW_CHAT_EVENT } from "@/components/layout/Sidebar";
 
 const EXAMPLES = [
   "Make a short reel from my photos with this music",
@@ -88,7 +90,16 @@ function friendlyMedia(o: JobOutput): string {
         ? "Vertical"
         : "Square"
     : "";
-  const kind = o.media === "audio" ? "audio" : o.media === "image" ? "picture" : o.media;
+  const kind =
+    o.media === "audio"
+      ? "audio"
+      : o.media === "image"
+        ? "picture"
+        : o.media === "pptx"
+          ? "presentation"
+          : o.media === "pdf"
+            ? "PDF"
+            : o.media;
   const parts = [shape ? `${shape} ${kind}` : kind.charAt(0).toUpperCase() + kind.slice(1)];
   if (dur) {
     const total = Math.round(Number(dur[1]));
@@ -157,9 +168,13 @@ function Stage({
           ) : shown.media === "audio" ? (
             <audio src={contentUrl(shown.handle)} controls className="w-3/4" />
           ) : (
-            <a href={contentUrl(shown.handle)} className="text-sm text-white underline">
-              Open your file
-            </a>
+            <div className="flex flex-col items-center gap-3 text-white/80">
+              {shown.media === "pptx" ? <Presentation size={44} /> : <Sparkles size={40} />}
+              <p className="text-[15px] font-medium">
+                {shown.media === "pptx" ? "Your presentation is ready" : "Your file is ready"}
+              </p>
+              <p className="text-[12px] text-white/50">Download it below to open it.</p>
+            </div>
           )
         ) : (
           <div className="flex flex-col items-center gap-3 px-6 text-center text-white/60">
@@ -445,11 +460,15 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
   const asking = last?.status === "needs_input";
 
   const handles = useMemo(() => Array.from(new Set(thread.flatMap((j) => j.assets))), [thread]);
+  const title =
+    [...thread].reverse().find((j) => j.result?.title)?.result?.title ??
+    (thread[0]?.prompt ? thread[0].prompt.split(/\s+/).slice(0, 7).join(" ") : "New chat");
   const assets = useAssets(handles);
 
   const onLive = useCallback((job: Job, evs: JobEvent[]) => {
     setThread((cur) => cur.map((j) => (j.id === job.id ? job : j)));
     setEvents(evs);
+    if (isTerminal(job.status)) window.dispatchEvent(new Event(CHATS_CHANGED_EVENT));
   }, []);
 
   useEffect(() => {
@@ -485,6 +504,7 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
       const job: Job = await res.json();
       setThread((cur) => [...cur, job]);
       setEvents([]);
+      window.dispatchEvent(new Event(CHATS_CHANGED_EVENT));
       setPicked(null);
       setText("");
       items.forEach((i) => remove(i.id));
@@ -505,6 +525,11 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
     items.forEach((i) => remove(i.id));
     window.history.replaceState(null, "", "/");
   }
+
+  useEffect(() => {
+    window.addEventListener(NEW_CHAT_EVENT, startOver);
+    return () => window.removeEventListener(NEW_CHAT_EVENT, startOver);
+  });
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -544,7 +569,9 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
       <aside className="flex h-[55vh] w-full shrink-0 flex-col border-l border-border bg-bg md:h-full md:w-[420px]">
         <header className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
-            <p className="text-[15px] font-semibold text-fg">Chat</p>
+            <p className="max-w-[260px] truncate text-[15px] font-semibold text-fg" title={title}>
+              {title}
+            </p>
             <p className="text-[12px] text-fg-tertiary">Your AI video editor</p>
           </div>
           <button

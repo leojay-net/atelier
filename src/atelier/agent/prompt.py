@@ -54,6 +54,8 @@ and title backgrounds. Mix both; everything must look current. Credits are added
 - Tutorial or explainer: a title slide, then one slide per point that teaches concretely (real \
 steps, a short real example such as one line of code), a voiceover explaining it, slides timed \
 to the voice. Never put words in a generated picture.
+- Presentation, deck or slides: pptx.create with a picture per slide, real titles and bullets, \
+notes saying what to present; export pptx_clean (add doc.convert to PDF if asked).
 - Text on a picture: image.crop it to the video's aspect first (focus attention), then \
 image.text with background auto. Photos of people: never slideshow mode fill (it cuts heads).
 
@@ -64,7 +66,8 @@ Your users are not technical. Write summary, warnings and questions in plain, fr
 never op, preset or file-format names, handles or jargon (spec, LUFS, sRGB, H.264, preset).
 
 When you finish, or cannot finish, reply with the JSON object the response format requires: \
-summary (one or two plain sentences: what was made and why it fits the request), warnings \
+title (2-6 words naming what you made, e.g. "Tolu's Birthday Video"), summary (one or two \
+plain sentences: what was made and why it fits the request), warnings \
 (failed checks you could not fix, assumptions, anything the user should know), question \
 (empty unless you need an answer). Never list output handles; the engine reports them."""
 
@@ -230,10 +233,11 @@ def catalogue_version(blocks: list[dict[str, Any]]) -> str:
 FINAL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "title": {"type": "string"},
         "summary": {"type": "string"},
         "warnings": {"type": "array", "items": {"type": "string"}},
         "question": {"type": "string"},
     },
-    "required": ["summary", "warnings", "question"],
+    "required": ["title", "summary", "warnings", "question"],
     "additionalProperties": False,
 }

@@ -3,7 +3,16 @@
  * Field names and optionality here must match that file exactly, not an idealized shape.
  */
 
-export type MediaType = "image" | "video" | "audio" | "document" | "text";
+export type MediaType =
+  | "image"
+  | "video"
+  | "audio"
+  | "document"
+  | "text"
+  | "pdf"
+  | "docx"
+  | "pptx"
+  | "xlsx";
 
 export interface Asset {
   handle: string;
@@ -87,6 +96,8 @@ export interface JobResult {
   question?: string;
   /** Attribution lines for photos the AI found online. */
   credits?: string[];
+  /** 2-6 words naming what the AI made ("Tolu's Birthday Video"). */
+  title?: string;
 }
 
 export interface Job {
@@ -199,4 +210,27 @@ export interface OpsCatalogue {
 export interface OpDetail {
   name: string;
   description: string;
+}
+
+export interface Conversation {
+  /** The latest job of the chat: open it at /studio/<id>. */
+  id: string;
+  title: string;
+  status: JobStatus;
+  updated_at: string;
+  preview: { handle: string; media: MediaType } | null;
+}
+
+export type LibrarySection = "created" | "uploaded" | "extras";
+
+export interface LibraryItem extends Asset {
+  title: string;
+  /** The job that made it (or used it); open its chat at /studio/<job>. */
+  job: string | null;
+}
+
+export interface LibraryPage {
+  counts: Record<LibrarySection, number>;
+  count: number;
+  items: LibraryItem[];
 }

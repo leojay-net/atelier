@@ -16,6 +16,10 @@ const ICONS: Record<MediaType, typeof ImageIcon> = {
   audio: Music,
   document: FileText,
   text: FileText,
+  pdf: FileText,
+  docx: FileText,
+  pptx: FileText,
+  xlsx: FileText,
 };
 
 interface AssetPickerProps {

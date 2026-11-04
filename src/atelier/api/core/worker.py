@@ -122,6 +122,8 @@ def _agent_outcome(job: Job, engine: Engine, res: AgentResult) -> Job:
         services.summarize_result(res.engine_result) if res.engine_result is not None else {}
     )
     body.update(summary=res.summary, warnings=list(res.warnings), question=res.question)
+    if res.title:
+        body["title"] = res.title
     if res.credits:
         body["credits"] = list(res.credits)
     fields: dict[str, Any] = {"result": body, "spec": res.spec}
