@@ -39,5 +39,6 @@ class BrandKitIn(Schema):
     tagline: str = Field("", max_length=200)
     colors: dict[str, str] = Field(default_factory=dict, max_length=12)
     fonts: dict[str, str] = Field(default_factory=dict, max_length=6)
+    rules: list[str] = Field(default_factory=list, max_length=50)
     logo: str | None = None
     logo_dark: str | None = None

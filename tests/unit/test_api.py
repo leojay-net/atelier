@@ -465,6 +465,25 @@ def test_the_brand_kit_is_validated_stored_and_sent_with_prompts(
     assert "Acme Studio" not in json.dumps(api_support.model.requests[0]["system"])
 
 
+def test_brand_kit_rules_limitations_and_restrictions(api: Api) -> None:
+    kit = {
+        "rules": [
+            "Video duration must not exceed 30 seconds",
+            "Never use unlicensed audio",
+        ]
+    }
+    r = api.put("/brand-kit", kit)
+    assert r.status_code == 200
+    assert r.json()["rules"] == kit["rules"]
+    assert api.get("/brand-kit").json()["rules"] == kit["rules"]
+    api_support.model = ScriptedModel(final("Nothing to do.", question=""))
+    api.post("/jobs", {"prompt": "Create an ad"})
+    text = api_support.model.requests[0]["messages"][0]["content"]
+    assert "Rules, limitations, and restrictions (strictly follow these):" in text
+    assert "- Video duration must not exceed 30 seconds" in text
+    assert "- Never use unlicensed audio" in text
+
+
 def test_bad_brand_kits_are_refused_with_the_field(api: Api, photo_bytes: bytes) -> None:
     assert (
         api.put("/brand-kit", {"colors": {"primary": "not-a-color"}}).json()["error"] == "bad_color"

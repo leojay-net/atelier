@@ -72,6 +72,7 @@ export function BrandKitForm({ initial }: { initial: BrandKit }) {
   const [tagline, setTagline] = useState(initial.tagline ?? "");
   const [colors, setColors] = useState<[string, string][]>(Object.entries(initial.colors ?? {}));
   const [fonts, setFonts] = useState<[string, string][]>(Object.entries(initial.fonts ?? {}));
+  const [rules, setRules] = useState<string[]>(initial.rules ?? []);
   const [logo, setLogo] = useState(initial.logo);
   const [logoDark, setLogoDark] = useState(initial.logo_dark);
   const [saving, setSaving] = useState(false);
@@ -86,6 +87,7 @@ export function BrandKitForm({ initial }: { initial: BrandKit }) {
         tagline,
         colors: Object.fromEntries(colors.filter(([k]) => k)),
         fonts: Object.fromEntries(fonts.filter(([k]) => k)),
+        rules: rules.filter((r) => r.trim().length > 0),
         ...(logo ? { logo } : {}),
         ...(logoDark ? { logo_dark: logoDark } : {}),
       };
@@ -155,6 +157,44 @@ export function BrandKitForm({ initial }: { initial: BrandKit }) {
           keyPlaceholder="role"
           valuePlaceholder="family name"
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[13px] font-medium text-fg">Rules, Limitations & Restrictions</label>
+        <p className="text-[12px] text-fg-tertiary">
+          Mandatory rules and negative constraints the agent must strictly follow (e.g. &quot;Cap video length at 60s&quot;, &quot;Always use primary brand color for headlines&quot;, &quot;No music without consent&quot;).
+        </p>
+        <div className="space-y-2">
+          {rules.map((rule, idx) => (
+            <div key={idx} className="flex gap-2">
+              <input
+                value={rule}
+                onChange={(e) => {
+                  const next = [...rules];
+                  next[idx] = e.target.value;
+                  setRules(next);
+                }}
+                placeholder="e.g. Max video duration 60 seconds"
+                className="flex-1 rounded-sm border border-border-strong bg-bg px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setRules(rules.filter((_, j) => j !== idx))}
+                className="rounded-sm p-1.5 text-fg-tertiary hover:bg-bg-subtle hover:text-status-failed"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setRules([...rules, ""])}
+            className="flex items-center gap-1 text-[12.5px] text-fg-secondary hover:text-fg"
+          >
+            <Plus size={13} />
+            Add rule
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

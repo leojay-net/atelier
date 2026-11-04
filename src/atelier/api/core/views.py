@@ -427,6 +427,8 @@ def put_brand_kit(request: HttpRequest, body: BrandKitIn) -> dict[str, Any]:
             )
     if body.fonts:
         kit["fonts"] = body.fonts
+    if body.rules:
+        kit["rules"] = [str(r).strip() for r in body.rules if str(r).strip()]
     for key in ("logo", "logo_dark"):
         handle = getattr(body, key)
         if handle:

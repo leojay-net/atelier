@@ -8,3 +8,5 @@ __pycache__/
 .hypothesis/
 dist/
 out/
+.atelier_test_run/
+*.ses

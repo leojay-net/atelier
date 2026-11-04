@@ -48,6 +48,14 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p.add_argument("--effort", choices=EFFORTS, default="high")
     p.add_argument("--no-fallbacks", action="store_true", help="do not re-run refusals elsewhere")
     p.add_argument("--no-plan-cache", action="store_true", help="always ask the model")
+    p.add_argument(
+        "--rules",
+        help="explicit rules, limitations, or restrictions (e.g. 'max_duration: 60s; font: Inter')",
+    )
+    p.add_argument(
+        "--rules-file",
+        help="file containing rules, limitations, and restrictions (one per line)",
+    )
     p.set_defaults(fn=cmd_ask)
 
     p = sub.add_parser("stats", help="token, turn, cache and check metrics from past jobs")
@@ -150,6 +158,27 @@ def cmd_ask(engine: Engine, args: argparse.Namespace) -> int:
     telemetry = Telemetry(engine.home / "telemetry")
     plan_cache = None if args.no_plan_cache else PlanCache(engine.home / "plans")
     out_dir = Path(args.out)
+
+    prompt = args.prompt
+    rules_items: list[str] = []
+    if getattr(args, "rules", None):
+        rules_items.append(args.rules)
+    if getattr(args, "rules_file", None):
+        rules_path = Path(args.rules_file)
+        if not rules_path.is_file():
+            return _fail(f"--rules-file {args.rules_file!r} not found", EXIT_INVALID)
+        rules_items.extend(
+            [
+                line.strip()
+                for line in rules_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        )
+    if rules_items:
+        prompt = f"{prompt}\n\nRules & Restrictions (strictly adhere to these):\n" + "\n".join(
+            f"- {r}" for r in rules_items
+        )
+
     try:
         targets = [_asset(engine, t).handle for t in args.targets]
         files: list[Path] = []
@@ -161,7 +190,7 @@ def cmd_ask(engine: Engine, args: argparse.Namespace) -> int:
         if args.each:
             each = [engine.store.put_file(f).handle for f in files]
             batch = run_batch_job(
-                args.prompt,
+                prompt,
                 each,
                 fixed=targets,
                 engine=engine,
@@ -172,7 +201,7 @@ def cmd_ask(engine: Engine, args: argparse.Namespace) -> int:
             )
             return _report_batch(engine, batch, files, out_dir)
         result = run_job(
-            Job(args.prompt, tuple(targets)),
+            Job(prompt, tuple(targets)),
             engine=engine,
             adapter=adapter,
             config=config,
