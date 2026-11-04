@@ -463,6 +463,7 @@ class TransitionParams(Params):
     params=TransitionParams,
     inputs=(MediaType.VIDEO, MediaType.VIDEO),
     description="transition between two clips (crossfade, wipe, slide, dissolve)",
+    hidden=True,  # catalogue budget: video.concat's `transition` covers it for 2 to 24 clips
 )
 def transition_op(g: Graph, p: TransitionParams) -> None:
     first_stream = Stream(

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from typing import Any
-from unittest.mock import patch
-
 import pytest
 
 from atelier.agent.client import MissingCredentials

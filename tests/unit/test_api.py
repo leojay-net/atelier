@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -164,6 +166,27 @@ def test_uploads_are_checked(acme: tuple[Org, Api], photo_bytes: bytes) -> None:
     r = api.upload("photo.png", photo_bytes)
     assert r.status_code == 413 and r.json()["error"] == "too_large"
     assert api.client.post("/api/v1/assets", {}, **api.headers).status_code == 422  # no file
+
+
+def test_empty_and_unreadable_uploads_are_refused(api: Api) -> None:
+    r = api.upload("empty.mp4", b"")
+    assert r.status_code == 400 and r.json()["error"] == "empty_file"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_a_truncated_video_is_refused_at_upload(api: Api, tmp_path: Path) -> None:
+    # A camera/ffmpeg-style MP4 keeps its index (moov) at the end, so an interrupted
+    # download has no index at all and cannot be read.
+    tail_moov = tmp_path / "clip.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-i", str(FIXTURES / "av" / "clip_landscape.mp4"),
+         "-c", "copy", "-movflags", "-faststart", str(tail_moov)],
+        check=True,
+    )  # fmt: skip
+    whole = tail_moov.read_bytes()
+    r = api.upload("truncated.mp4", whole[: len(whole) // 3])
+    assert r.status_code == 415 and r.json()["error"] == "unreadable_media", r.json()
+    assert api.upload("clip.mp4", whole).status_code == 201
 
 
 def test_asset_detail_content_and_listing(api: Api, photo_bytes: bytes) -> None:

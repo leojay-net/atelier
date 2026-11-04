@@ -1,0 +1,40 @@
+"""Regressions from the 2026-11-04 live user test (docs/13-live-user-test-2026-11-04.md)."""
+
+from __future__ import annotations
+
+import importlib
+
+import pytest
+
+from atelier.av.ops import SpeedParams, _atempo_chain
+from atelier.ops.image.text import check_glyphs
+from atelier.ops.registry import OpError
+
+
+def test_the_model_client_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    import atelier.api.settings as settings
+
+    monkeypatch.delenv("ATELIER_MODEL_CLIENT", raising=False)
+    assert importlib.reload(settings).ATELIER_MODEL_CLIENT.endswith(".vultr_client")
+    monkeypatch.setenv("ATELIER_MODEL_CLIENT", "atelier.api.core.clients.ollama_client")
+    assert importlib.reload(settings).ATELIER_MODEL_CLIENT.endswith(".ollama_client")
+    monkeypatch.delenv("ATELIER_MODEL_CLIENT")
+    importlib.reload(settings)
+
+
+def test_quarter_speed_slow_motion_is_allowed() -> None:
+    assert SpeedParams(factor=0.25).factor == 0.25
+    assert _atempo_chain(0.25) == [0.5, 0.5]
+    with pytest.raises(ValueError):
+        SpeedParams(factor=0.2)
+
+
+@pytest.mark.parametrize("text", ["It's 50% off — “ok” • €", "Nguyễn Привет Ελληνικά", "⚠️"])
+def test_text_the_font_can_draw_passes(text: str) -> None:
+    check_glyphs(text, "Inter", "bold")
+
+
+@pytest.mark.parametrize(("text", "named"), [("Launch 🎬", "🎬"), ("中文字幕", "中")])
+def test_text_the_font_cannot_draw_fails_naming_the_characters(text: str, named: str) -> None:
+    with pytest.raises(OpError, match=named):
+        check_glyphs(text, "Inter", "bold")

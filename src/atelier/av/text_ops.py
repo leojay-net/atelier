@@ -148,7 +148,7 @@ def _record(
 
 @video_op(
     name="video.text",
-    version="1.0.0",
+    version="1.0.1",
     params=TextParams,
     description="put a title or a line of text on the video for a time range",
     also=("pillow", "icc", "fonts"),
@@ -186,7 +186,7 @@ def _timed(cues: list[Cue], shift: float, total: float | None) -> list[Cue]:
 
 @video_op(
     name="video.captions",
-    version="1.0.0",
+    version="1.0.1",
     params=CaptionsParams,
     inputs=(MediaType.VIDEO, MediaType.TEXT),
     description="burn in captions from an SRT/WebVTT file (second input)",
@@ -329,7 +329,7 @@ def _render_lower_third(p: LowerThirdParams, frame: tuple[int, int]) -> Layer:
 
 @video_op(
     name="video.lower_third",
-    version="1.0.0",
+    version="1.0.1",
     params=LowerThirdParams,
     description="branded speaker name and title card overlay in lower third",
     also=("pillow", "icc", "fonts"),

@@ -122,7 +122,18 @@ def upload(request: HttpRequest, file: File[UploadedFile]) -> Status[dict[str, A
                 if written > limit:
                     raise ApiError(413, "too_large", f"the file is larger than {limit // 2**20} MB")
                 out.write(chunk)
+        if written == 0:
+            raise ApiError(400, "empty_file", "the file is empty")
         info = engine.store.put_file(target)
+    if info.media in (MediaType.VIDEO, MediaType.AUDIO):
+        meta = engine.probe(info)
+        if "error" in meta:  # truncated, half-downloaded or not really media: say so now
+            raise ApiError(
+                415,
+                "unreadable_media",
+                f"this {info.media.value} file cannot be read ({meta['error']}); "
+                "it may be incomplete or damaged",
+            )
     if not services.known_media(info.media.value):
         raise ApiError(
             415,
