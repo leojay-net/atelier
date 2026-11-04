@@ -83,6 +83,10 @@ def brand_kit_text(job: Job) -> str:
     for key in ("logo", "logo_dark"):
         if kit.get(key):
             lines.append(f"- {key}: {kit[key]} (an image asset you may use)")
+    if kit.get("rules"):
+        lines.append("Rules, limitations, and restrictions (strictly follow these):")
+        for rule in kit["rules"]:
+            lines.append(f"- {rule}")
     return "\n".join(lines)
 
 

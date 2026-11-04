@@ -199,3 +199,30 @@ def test_stats_reports_recorded_jobs(
     assert stats["tokens_per_completed_job"]["output"] == 100
     assert main(["--home", str(home), "stats", "--last", "1"]) == 0
     assert "jobs 1 · completed 1" in capsys.readouterr().out
+
+
+def test_ask_rules_flag_appends_rules_to_prompt(
+    monkeypatch: pytest.MonkeyPatch, home: Path, image: Path, tmp_path: Path
+) -> None:
+    h = handle_of(home, image)
+    model = ScriptedModel(run_pipeline(good(h)), final("Done."))
+    use(monkeypatch, model)
+    out = tmp_path / "out"
+    rules_file = tmp_path / "rules.txt"
+    rules_file.write_text("No emojis\nCap runtime at 15s\n")
+    code = ask(
+        home,
+        out,
+        "make banner",
+        str(image),
+        "--rules",
+        "Max width 1080px",
+        "--rules-file",
+        str(rules_file),
+    )
+    assert code == 0
+    prompt_sent = model.requests[0]["messages"][0]["content"]
+    assert "Rules & Restrictions (strictly adhere to these):" in prompt_sent
+    assert "- Max width 1080px" in prompt_sent
+    assert "- No emojis" in prompt_sent
+    assert "- Cap runtime at 15s" in prompt_sent

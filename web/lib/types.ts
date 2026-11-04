@@ -166,6 +166,7 @@ export interface BrandKit {
   tagline?: string;
   colors?: Record<string, string>;
   fonts?: Record<string, string>;
+  rules?: string[];
   logo?: string;
   logo_dark?: string;
 }
