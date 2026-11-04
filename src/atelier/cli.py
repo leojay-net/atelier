@@ -37,7 +37,7 @@ EXIT_CHECKS = 3
 
 
 def _home(arg: str | None) -> Path:
-    return Path(arg or os.environ.get("ATELIER_HOME") or ".atelier")
+    return Path(arg or os.environ.get("ATELIER_HOME") or ".atelier").resolve()
 
 
 def _fail(message: str, code: int = EXIT_FAILED) -> int:
