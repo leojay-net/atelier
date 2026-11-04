@@ -52,15 +52,6 @@ class CreateDeckParams(Params):
     accent: Color = Field("#3b82f6ff", description="accent bar color")
 
 
-def _deck_ok(p: CreateDeckParams, n: int) -> str | None:
-    if n not in (1, len(p.slides)):
-        return (
-            f"pptx.create needs one picture per slide ({len(p.slides)}) or a single picture "
-            f"for all of them, got {n}"
-        )
-    return None
-
-
 def _picture(path: object, aspect: float, darken_bottom: bool = False) -> io.BytesIO:
     """The picture center-cropped to `aspect`, at most 1920 px wide, as JPEG bytes."""
     with Image.open(path) as im:  # type: ignore[arg-type]
@@ -117,20 +108,20 @@ def _text(
     summary=doc_summary,
     description="new presentation: a picture, title and bullets per slide",
     resources=RESOURCES,
-    check_inputs=_deck_ok,
 )
 def create(ctx: OpContext, inputs: Sequence[Artifact], p: CreateDeckParams) -> Artifact:
     """A new 16:9 PowerPoint deck. Slide 1 is the title slide (its picture full-bleed, title
     and the first body line as subtitle); every other slide shows its title and bullet `body`
-    lines on a `theme` panel with an `accent` bar and its picture on the right half. Give one
-    picture per slide, or one for all. `notes` become speaker notes. Text stays editable."""
+    lines on a `theme` panel with an `accent` bar and its picture on the right half. Pictures
+    go to slides in order (reused from the start if there are fewer pictures than slides).
+    `notes` become speaker notes. Text stays editable."""
     panel, title_c, body_c = THEMES[p.theme]
     accent = rgba(p.accent)[:3]
     prs = Presentation()
     prs.slide_width, prs.slide_height = W, H
     blank = prs.slide_layouts[6]
     for i, item in enumerate(p.slides):
-        pic = inputs[i if len(inputs) > 1 else 0].path
+        pic = inputs[i % len(inputs)].path  # fewer pictures than slides: reuse them in order
         slide = prs.slides.add_slide(blank)
         if i == 0:
             slide.shapes.add_picture(_picture(pic, W / H, darken_bottom=True), 0, 0, W, H)

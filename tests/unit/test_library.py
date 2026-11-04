@@ -13,7 +13,6 @@ from test_api import make_org
 
 import api_support
 from atelier.engine.engine import Engine
-from atelier.spec.errors import SpecInvalid
 from conftest import FIXTURES
 from harness.fake_model import ScriptedModel, final, message, text, tool_use
 
@@ -135,9 +134,10 @@ def test_a_presentation_from_pictures_has_real_text_and_notes(tmp_path: Path) ->
     assert len(Presentation(engine.store.path(one.outputs["out"].hash)).slides) == 2
 
 
-def test_a_presentation_needs_one_picture_per_slide_or_one(tmp_path: Path) -> None:
+def test_a_presentation_reuses_pictures_when_there_are_fewer_than_slides(tmp_path: Path) -> None:
+    """Live: a deck was refused for a picture/slide count mismatch until the budget ran out."""
     engine = Engine.open(tmp_path / "store")
     pic = engine.store.put_file(FIXTURES / "photo.png").handle
     slides = [{"title": "A"}, {"title": "B"}, {"title": "C"}]
-    with pytest.raises(SpecInvalid, match="one picture per slide"):
-        engine.validate(deck_spec([pic, pic], slides))
+    result = engine.run(deck_spec([pic, pic], slides))
+    assert len(Presentation(engine.store.path(result.outputs["out"].hash)).slides) == 3
