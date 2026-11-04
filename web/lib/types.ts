@@ -62,6 +62,8 @@ export interface StepReport {
   cached: boolean;
   seconds: number;
   fused: string[];
+  /** The ops of the fused steps (same order as `fused`). */
+  fused_ops?: string[];
 }
 
 export interface JobOutput {
