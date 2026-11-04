@@ -51,6 +51,7 @@ class Job:
 class AgentResult:
     status: str
     summary: str = ""
+    title: str = ""  # 2-6 words naming the result, for chat lists and the library
     warnings: tuple[str, ...] = ()
     question: str = ""
     detail: str = ""  # refusal category, error text…
@@ -145,6 +146,7 @@ def _run(
         return AgentResult(
             status=status,
             summary=str(final.get("summary", "")),
+            title=" ".join(str(final.get("title", "")).split())[:80],
             warnings=tuple(str(w) for w in final.get("warnings", ())),
             question=str(final.get("question", "")),
             detail=detail,

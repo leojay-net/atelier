@@ -41,6 +41,7 @@ BUILTIN_MODULES = (
     "atelier.docs.pdf_ops",
     "atelier.docs.xlsx_ops",
     "atelier.docs.pptx_ops",
+    "atelier.docs.deck_ops",
     "atelier.ops.preview",
     "atelier.av.preview",
     "atelier.docs.preview",

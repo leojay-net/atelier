@@ -92,9 +92,10 @@ def test_prompt_stays_within_the_token_budget() -> None:
     """docs/04 §4.3: rules ~400 + catalogue 1.5-3k + examples ~800 tokens (≈ 4 chars/token).
     Raised 4500 → 4600 for the Sound and Follow-up rules (no silent video by surprise,
     make_voiceover, refining a result), trimmed to their minimum first; 4600 → 4800 for the
-    Pictures rules (find_images / make_image, tutorials)."""
+    Pictures rules (find_images / make_image, tutorials); 4800 → 5000 for result titles and
+    presentations from scratch (pptx.create)."""
     text = "\n".join(b["text"] for b in system_blocks(load_builtin_ops()))
-    assert len(text) / 4 < 4800
+    assert len(text) / 4 < 5000
 
 
 def test_final_schema_is_strict_compatible() -> None:

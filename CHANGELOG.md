@@ -5,6 +5,12 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Library, chats, presentations (2026-11-05)
+- New op `pptx.create` 1.0.0: a new 16:9 PowerPoint deck from pictures and an outline (title
+  slide with the picture full-bleed; content slides with title, bullets and the picture on the
+  right; speaker notes), real editable text, deterministic package. Catalogue budget 3240 → 3290.
+- The agent's final answer has a `title` (2-6 words); prompt budget 4800 → 5000.
+
 ### Live picture test fixes (2026-11-04)
 - `video.slideshow` 1.0.0 → 1.1.0: new mode `blur` (the default): a picture of another shape is
   shown whole over a blurred, slightly darkened copy of itself. Before, a landscape family photo

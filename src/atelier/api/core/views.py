@@ -184,6 +184,27 @@ def list_assets(request: HttpRequest, limit: int = 50, offset: int = 0) -> dict[
     }
 
 
+@api.get("/library")
+def library(
+    request: HttpRequest,
+    section: str = "created",
+    media: str = "all",
+    limit: int = 60,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """The web UI's Library: created / uploaded / extras, filterable by media."""
+    if section not in ("created", "uploaded", "extras"):
+        raise ApiError(422, "bad_request", "section must be created, uploaded or extras")
+    limit = max(1, min(limit, 200))
+    return services.library(_org(request), section, media, limit, max(0, offset))
+
+
+@api.get("/conversations")
+def conversations(request: HttpRequest, limit: int = 50) -> dict[str, Any]:
+    """Recent chats, newest first, each by its latest job (open it at /studio/<id>)."""
+    return {"items": services.conversations(_org(request), max(1, min(limit, 100)))}
+
+
 def _asset(request: HttpRequest, handle: str) -> Asset:
     digest = handle.removeprefix("asset:")
     asset = (

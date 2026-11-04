@@ -143,6 +143,125 @@ def asset_dict(asset: Asset) -> dict[str, Any]:
     }
 
 
+# -- library and conversations (the web UI's "Library" and recent chats) ------------------------
+
+DOCUMENT_MEDIA = ("pdf", "docx", "pptx", "xlsx", "text")
+
+
+def job_title(job: Job) -> str:
+    """The AI's title for what a job made, else the first words of the request."""
+    title = str((job.result or {}).get("title") or "").strip()
+    if title:
+        return title
+    words = re.sub(r"https?://\S+", "", job.prompt or "").split()
+    text = " ".join(words[:7]) + ("…" if len(words) > 7 else "")
+    return (text[:1].upper() + text[1:]) if text else "Untitled"
+
+
+def output_handles(job: Job) -> list[str]:
+    return [o["handle"] for o in ((job.result or {}).get("outputs") or {}).values()]
+
+
+def latest_in_thread(job: Job) -> Job:
+    """Follow the newest follow-up down to the end of the conversation."""
+    seen = 0
+    while seen < 100 and (nxt := job.followups.order_by("-created_at").first()) is not None:
+        job, seen = nxt, seen + 1
+    return job
+
+
+def thread_title(job: Job) -> str:
+    """A conversation's name: the newest AI title in it, else its first request."""
+    node: Job | None = job
+    first = job
+    for _ in range(100):
+        if node is None:
+            break
+        if (node.result or {}).get("title"):
+            return str(node.result["title"])
+        first, node = node, node.parent
+    return job_title(first)
+
+
+def _extra_title(filename: str) -> str:
+    stem = filename.rsplit(".", 1)[0]
+    if stem.startswith("voiceover"):
+        return "AI voiceover"
+    for prefix, label in (("made-", "AI picture"), ("found-", "Photo from the web")):
+        if stem.startswith(prefix):
+            words = stem[len(prefix) :].replace("-", " ").strip()
+            return f"{label}: {words}" if words else label
+    return filename or "File"
+
+
+def library(org: Org, section: str, media: str, limit: int, offset: int) -> dict[str, Any]:
+    """Every asset of the organization in one of three sections: `created` (what a request
+    delivered), `uploaded` (what people uploaded) and `extras` (what the AI fetched or made on
+    the way: found photos, generated pictures, voiceovers, linked files)."""
+    assets = Asset.objects.filter(org=org).select_related("origin_job").order_by("-created_at")
+    outputs: dict[str, Job] = {}
+    for job in Job.objects.filter(org=org).exclude(result=None).only("id", "result", "prompt"):
+        for handle in output_handles(job):
+            outputs.setdefault(handle.removeprefix("asset:"), job)
+    counts = {"created": 0, "uploaded": 0, "extras": 0}
+    items: list[dict[str, Any]] = []
+    for a in assets:
+        kind = (
+            "created" if a.hash in outputs else "uploaded" if a.origin_job_id is None else "extras"
+        )
+        counts[kind] += 1
+        if kind != section:
+            continue
+        wanted = media in ("", "all") or (
+            a.media in DOCUMENT_MEDIA if media == "document" else a.media == media
+        )
+        if not wanted:
+            continue
+        job = outputs.get(a.hash) or a.origin_job
+        item = asset_dict(a)
+        if kind == "created" and job is not None:
+            item["title"] = thread_title(job)  # "Music, this one" is a reply, not a name
+        elif kind == "extras":
+            item["title"] = _extra_title(a.filename)
+        else:
+            item["title"] = a.filename or a.handle[:18]
+        item["job"] = str(job.id) if job is not None else None
+        items.append(item)
+    return {"counts": counts, "count": len(items), "items": items[offset : offset + limit]}
+
+
+def conversations(org: Org, limit: int = 50) -> list[dict[str, Any]]:
+    """Each conversation once, newest first, by its latest job (prompt jobs with no follow-up)."""
+    ends = (
+        Job.objects.filter(org=org, kind="prompt", followups__isnull=True)
+        .order_by("-created_at")
+        .select_related("parent")[:limit]
+    )
+    out = []
+    for job in ends:
+        preview, node = None, job
+        for _ in range(100):
+            if node is None:
+                break
+            handles = output_handles(node)
+            if handles:
+                outs = (node.result or {}).get("outputs") or {}
+                first = next(iter(outs.values()))
+                preview = {"handle": first["handle"], "media": first.get("media")}
+                break
+            node = node.parent
+        out.append(
+            {
+                "id": str(job.id),
+                "title": thread_title(job),
+                "status": job.status,
+                "updated_at": job.created_at,
+                "preview": preview,
+            }
+        )
+    return out
+
+
 def known_media(media: str) -> bool:
     return media not in (MediaType.BINARY.value,)
 
