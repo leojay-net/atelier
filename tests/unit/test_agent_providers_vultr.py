@@ -26,6 +26,7 @@ def test_vultr_adapter_builds_with_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(adapter, OpenAICompatibleAdapter)
     assert str(adapter.client.base_url).rstrip("/") == "https://api.vultrinference.com/v1"
     assert adapter.client.api_key == "test-vultr-api-key"
+    assert adapter.client.max_retries == 5  # rides out brief endpoint blips
 
 
 def test_vultr_adapter_custom_base_url(monkeypatch: pytest.MonkeyPatch) -> None:

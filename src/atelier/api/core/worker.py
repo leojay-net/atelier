@@ -175,7 +175,25 @@ def execute(job_id: uuid.UUID) -> Job:
         return _finish(job, Job.FAILED, error="the model service is not configured on this server")
     except Exception as e:  # a bug must fail the job, not take the worker down
         log.exception("job %s crashed", job.pk)
-        return _finish(job, Job.FAILED, error=f"internal error: {type(e).__name__}")
+        return _finish(job, Job.FAILED, error=f"internal error: {_describe(e)}")
+
+
+def _describe(e: BaseException) -> str:
+    """Name the exception and its root cause, e.g. a model client's APIConnectionError caused by
+    ConnectionRefusedError, so a failed job is diagnosable from the API. Only an OS error's fixed
+    `strerror` text is included; other messages may carry internals and stay in the log."""
+    root: BaseException | None = e
+    seen = set()
+    while root is not None and id(root) not in seen:
+        seen.add(id(root))
+        nxt = root.__cause__ or root.__context__
+        if nxt is None:
+            break
+        root = nxt
+    if root is None or root is e:
+        return type(e).__name__
+    why = f" ({root.strerror})" if isinstance(root, OSError) and root.strerror else ""
+    return f"{type(e).__name__} caused by {type(root).__name__}{why}"
 
 
 def reap_stale() -> int:

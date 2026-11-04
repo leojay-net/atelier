@@ -86,7 +86,9 @@ def _vultr_adapter() -> ModelAdapter:
             "no Vultr credentials: set VULTR_INFERENCE_API_KEY or VULTR_API_KEY"
         ) from None
     try:
-        client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        # Ride out brief endpoint blips (seen in production as bursts of connection refusals):
+        # 5 retries with the SDK's exponential backoff is roughly 30 seconds before giving up.
+        client = openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=5)
     except openai.OpenAIError as e:
         raise MissingCredentials(f"invalid Vultr configuration: {e}") from None
     return OpenAICompatibleAdapter(client)
