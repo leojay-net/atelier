@@ -12,6 +12,7 @@ import dataclasses
 import importlib
 import json
 import logging
+import shutil
 import time
 import uuid
 from collections.abc import Callable
@@ -29,7 +30,7 @@ from atelier.agent.loop import run_job as run_agent
 from atelier.agent.plan_cache import PlanCache
 from atelier.agent.telemetry import Telemetry
 from atelier.agent.voice import VoiceService
-from atelier.api.core import services
+from atelier.api.core import links, services
 from atelier.api.core.models import Job
 from atelier.engine.engine import Engine
 from atelier.engine.runner import JobResult, RunCancelled, StepFailed
@@ -161,11 +162,52 @@ def followup_context(job: Job) -> tuple[str, list[str]]:
     return "\n".join(lines), [*outputs, *parent.assets]
 
 
+def fetch_links(job: Job, engine: Engine) -> tuple[str, list[str]]:
+    """Download the files linked in the message (links.py) as assets of this job. Returns a
+    note for the model (what each link became, or why it could not be used) and the handles."""
+    urls = links.find_links(job.prompt)[: links.MAX_LINKS]
+    if not urls:
+        return "", []
+    notes, handles = [], []
+    for url in urls:
+        services.emit(job, "link", {"url": url[:200], "state": "downloading"})
+        work = engine.store.work_dir("link-")
+        try:
+            name = links.fetch(
+                url,
+                work / "download",
+                max_bytes=services.upload_limit(job.org),
+                allow_private=settings.ATELIER_LINKS_ALLOW_PRIVATE,
+            )
+            info = engine.store.put_file(work / "download", move=True)
+            if not services.known_media(info.media.value):
+                raise links.LinkError("that file is not a picture, video, sound or document")
+            try:
+                info, name = services.normalize_upload(engine, info, name)
+            except services.ApiError as e:
+                raise links.LinkError(e.message) from None
+            if info.media.value in ("video", "audio") and "error" in engine.probe(info):
+                raise links.LinkError("the downloaded file is damaged or incomplete")
+            services.register_asset(job.org, info, filename=name, origin=job)
+            handles.append(info.handle)
+            notes.append(f"- {url} was downloaded: {engine.inspect(info)}")
+            services.emit(job, "link", {"url": url[:200], "state": "done", "name": name})
+        except links.LinkError as e:
+            notes.append(f"- {url} could not be used: {e}. Tell the user in plain words.")
+            services.emit(job, "link", {"url": url[:200], "state": "failed", "reason": str(e)})
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    return "Links in the message:\n" + "\n".join(notes), handles
+
+
 def _run_prompt(job: Job, engine: Engine) -> Job:
     context, earlier = followup_context(job)
+    link_note, linked = fetch_links(job, engine)
     prompt = f"{context}\n\nNow: {job.prompt}" if context else job.prompt
+    if link_note:
+        prompt = f"{prompt}\n\n{link_note}"
     kit = brand_kit_text(job)
-    handles = list(dict.fromkeys([*job.assets, *earlier]))[:20]  # new files first, no repeats
+    handles = list(dict.fromkeys([*job.assets, *linked, *earlier]))[:20]  # new files first
     if kit:
         prompt = f"{prompt}\n\n{kit}"
         handles += [

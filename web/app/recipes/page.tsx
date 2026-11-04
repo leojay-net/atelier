@@ -23,7 +23,7 @@ export default async function RecipesPage() {
         <EmptyState
           icon={BookMarked}
           title="No recipes yet"
-          description='Run something from the Workbench, then "Save as recipe" once it succeeds.'
+          description='Make something in Create, then "Save as recipe" once it succeeds.'
         />
       ) : (
         <div className="space-y-2">

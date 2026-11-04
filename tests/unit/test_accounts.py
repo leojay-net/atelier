@@ -137,3 +137,23 @@ def test_users_cannot_see_or_use_each_others_files_and_jobs() -> None:
     assert bob.upload("mine.png", photo).status_code == 201
     assert ada.get("/assets").json()["count"] == 2  # her upload and her job's output
     assert bob.get("/assets").json()["count"] == 1
+
+
+def test_an_iphone_heic_photo_is_stored_as_a_jpeg_that_editing_can_use(tmp_path: Path) -> None:
+    import io
+
+    import pillow_heif
+    from PIL import Image
+
+    pillow_heif.register_heif_opener()
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 48), "orange").save(buf, "HEIF")
+    ada = session("ada@example.com")
+    r = ada.upload("IMG_4821.HEIC", buf.getvalue())
+    assert r.status_code == 201, r.json()
+    asset = r.json()
+    assert asset["ext"] == ".jpg" and asset["filename"] == "IMG_4821.jpg"
+    job = ada.post(
+        "/jobs", {"spec": {"in": asset["handle"], "ops": [["export", {"preset": "web_jpeg"}]]}}
+    ).json()
+    assert job["status"] in ("succeeded", "checks_failed"), job

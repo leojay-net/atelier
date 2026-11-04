@@ -203,7 +203,10 @@ def _run(
         results = [(call, toolbox.dispatch(call.name, call.input)) for call in uses]
         turn.tool_calls = [call.name for call in uses]
         if engine.observer is not None:
-            engine.observer("tools", {"names": turn.tool_calls})
+            engine.observer(
+                "tools",
+                {"names": turn.tool_calls, "details": [_call_detail(call) for call in uses]},
+            )
         if budget.hard_exhausted:
             return finish("budget")
         notice = budget.notice() if budget.soft_exhausted else ""
@@ -260,6 +263,28 @@ def _replay(plan_cache: PlanCache, key: str, engine: Engine) -> AgentResult | No
 
 def _outputs(result: JobResult) -> dict[str, str]:
     return {out_id: rep.handle for out_id, rep in result.outputs.items()}
+
+
+def _call_detail(call: Any) -> str:
+    """A short, human-readable line about one tool call, for the live activity feed."""
+    args = call.input if isinstance(call.input, dict) else {}
+    if call.name == "make_voiceover":
+        text = " ".join(str(args.get("text", "")).split())
+        return f"voice {args.get('voice', '')}: “{text[:160]}{'…' if len(text) > 160 else ''}”"
+    if call.name == "run_pipeline":
+        spec = args.get("spec")
+        if isinstance(spec, dict):
+            if "recipe" in spec:
+                return f"recipe {spec['recipe']}"
+            steps = spec.get("steps") or spec.get("ops") or []
+            ops = [s.get("op") if isinstance(s, dict) else s[0] for s in steps if s]
+            return " → ".join(str(o) for o in ops if o)
+        return ""
+    if call.name in ("inspect_media", "preview"):
+        return f"{len(args.get('assets') or [])} file(s)"
+    if call.name == "describe_op":
+        return ", ".join(str(n) for n in (args.get("names") or [])[:6])
+    return ""
 
 
 def _user_text(job: Job, infos: Sequence[AssetInfo], engine: Engine) -> str:

@@ -39,10 +39,10 @@ export default async function JobsPage({
         <EmptyState
           icon={ListChecks}
           title="No jobs yet"
-          description="Run something from the Workbench to see it here."
+          description="Make something in Create to see it here."
           action={
             <Link href="/">
-              <Button size="sm">Go to Workbench</Button>
+              <Button size="sm">Start creating</Button>
             </Link>
           }
         />

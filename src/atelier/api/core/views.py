@@ -169,7 +169,8 @@ def upload(request: HttpRequest, file: File[UploadedFile]) -> Status[dict[str, A
             "this kind of file is not supported (images, video, audio, PDF, Word, Excel, "
             "PowerPoint and plain text are)",
         )
-    asset = services.register_asset(org, info, file.name or "")
+    info, name = services.normalize_upload(engine, info, file.name or "")
+    asset = services.register_asset(org, info, name)
     return Status(201, services.asset_dict(asset))
 
 
@@ -311,6 +312,18 @@ def create_job(request: HttpRequest, body: JobIn) -> Status[dict[str, Any]]:
     enqueue(job)
     job.refresh_from_db()
     return Status(202, services.job_dict(job))
+
+
+@api.get("/jobs/{job_id}/thread")
+def job_thread(request: HttpRequest, job_id: str) -> dict[str, Any]:
+    """The conversation a job belongs to, oldest first: it and the jobs it follows up on."""
+    chain = [_job(request, job_id)]
+    while chain[-1].parent_id and len(chain) < 50:
+        parent = Job.objects.filter(pk=chain[-1].parent_id, org=_org(request)).first()
+        if parent is None:
+            break
+        chain.append(parent)
+    return {"items": [services.job_dict(j) for j in reversed(chain)]}
 
 
 def _job(request: HttpRequest, job_id: str) -> Job:
