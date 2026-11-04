@@ -7,7 +7,7 @@ export default function NotFound() {
       <FileQuestion size={32} className="text-fg-tertiary" />
       <p className="text-[15px] font-medium text-fg">Page not found.</p>
       <Link href="/" className="text-[13px] text-accent hover:underline">
-        Back to the Workbench
+        Back to Create
       </Link>
     </div>
   );

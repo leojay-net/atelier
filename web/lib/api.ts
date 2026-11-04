@@ -43,6 +43,11 @@ export const api = {
 
   getJob: (id: string) => djangoFetch(`/jobs/${encodeURIComponent(id)}`).then((r) => parse<Job>(r)),
 
+  thread: (id: string) =>
+    djangoFetch(`/jobs/${encodeURIComponent(id)}/thread`).then((r) =>
+      parse<{ items: Job[] }>(r),
+    ),
+
   listRecipes: () => djangoFetch("/recipes").then((r) => parse<RecipeList>(r)),
 
   getUsage: () => djangoFetch("/usage").then((r) => parse<Usage>(r)),

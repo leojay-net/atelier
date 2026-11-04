@@ -270,7 +270,13 @@ def run(
         if observer is not None:
             observer(
                 "step_start",
-                {"step": last.id, "op": last.op.name, "index": index, "groups": len(groups)},
+                {
+                    "step": last.id,
+                    "op": last.op.name,
+                    "index": index,
+                    "groups": len(groups),
+                    "ops": [s.op.name for s in group.steps],  # every op fused into this run
+                },
             )
         inputs = [assets[r] for r in group.inputs]
         resources = _group_resources(group, types)

@@ -79,6 +79,38 @@ def clean_filename(name: str, fallback: str) -> str:
     return base or fallback
 
 
+HEIF_EXTS = (".heic", ".heif", ".hif")
+
+
+def normalize_upload(engine: Any, info: Any, filename: str) -> tuple[Any, str]:
+    """iPhone photos arrive as HEIC, which the image ops cannot decode: store a JPEG instead
+    (orientation and color kept), named like the original. Anything else is returned as is."""
+    if info.ext.lower() not in HEIF_EXTS:
+        return info, filename
+    import io
+
+    import pillow_heif
+    from PIL import Image, ImageOps
+
+    from atelier.media import MediaType
+
+    pillow_heif.register_heif_opener()
+    try:
+        with Image.open(engine.store.path(info.hash)) as im:
+            icc = im.info.get("icc_profile")
+            rgb = ImageOps.exif_transpose(im).convert("RGB")
+            out = io.BytesIO()
+            extra = {"icc_profile": icc} if icc else {}
+            rgb.save(out, "JPEG", quality=92, **extra)
+    except Exception as e:  # any decoder failure means "unreadable"
+        raise ApiError(
+            415, "unreadable_media", "this iPhone photo could not be read; it may be damaged"
+        ) from e
+    converted = engine.store.put_bytes(out.getvalue(), media=MediaType.IMAGE, ext=".jpg")
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return converted, f"{stem or 'photo'}.jpg"
+
+
 def register_asset(
     org: Org, info: AssetInfo, filename: str = "", origin: Job | None = None
 ) -> Asset:

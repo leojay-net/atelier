@@ -1,5 +1,5 @@
-import { Workbench } from "@/components/jobs/Workbench";
+import { Studio } from "@/components/studio/Studio";
 
 export default function HomePage() {
-  return <Workbench />;
+  return <Studio initialThread={[]} />;
 }

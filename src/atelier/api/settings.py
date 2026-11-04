@@ -138,6 +138,8 @@ ATELIER_MODEL_CLIENT = os.environ.get(
 # "llama3.1:8b-instruct-q4_K_M" for ollama_client, "gpt-4o" for openai_client, "gemini-2.5-flash"
 # for gemini_client.
 ATELIER_MODEL_NAME = os.environ.get("ATELIER_MODEL_NAME", "")
+# Tests only: let chat links reach a local test server (production refuses private addresses).
+ATELIER_LINKS_ALLOW_PRIVATE = False
 # A factory: () -> VoiceService | None, for the agent's make_voiceover tool (Vultr TTS).
 ATELIER_VOICE_CLIENT = os.environ.get(
     "ATELIER_VOICE_CLIENT", "atelier.agent.voice.from_environment"

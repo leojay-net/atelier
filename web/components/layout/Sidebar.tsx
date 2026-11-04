@@ -7,7 +7,7 @@ import { logout } from "@/app/(auth)/actions";
 import clsx from "clsx";
 
 const NAV = [
-  { href: "/", label: "Workbench", icon: Wand2, exact: true },
+  { href: "/", label: "Create", icon: Wand2, exact: true },
   { href: "/assets", label: "Assets", icon: ImageIcon },
   { href: "/jobs", label: "Jobs", icon: ListChecks },
   { href: "/recipes", label: "Recipes", icon: BookMarked },
@@ -24,7 +24,9 @@ export function Sidebar({ email }: { email: string }) {
       </div>
       <nav className="flex flex-col gap-0.5 px-3 py-2">
         {NAV.map(({ href, label, icon: Icon, exact }) => {
-          const active = exact ? pathname === href : pathname.startsWith(href);
+          const active = exact
+            ? pathname === href || pathname.startsWith("/studio")
+            : pathname.startsWith(href);
           return (
             <Link
               key={href}
