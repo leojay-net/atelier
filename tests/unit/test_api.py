@@ -369,6 +369,30 @@ def test_a_crash_inside_a_job_fails_it_and_not_the_worker(
     assert "secret" not in result.error  # details stay in the log, not in the API
 
 
+def test_a_crash_names_its_root_cause_without_leaking_messages(
+    acme: tuple[Org, Api], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    org, _ = acme
+
+    def refused(job: Job, engine: Any) -> Job:
+        try:
+            try:
+                raise ConnectionRefusedError(111, "Connection refused")
+            except OSError as err:
+                raise ValueError("secret transport detail") from err
+        except ValueError as err:
+            raise RuntimeError("secret client detail") from err
+
+    monkeypatch.setattr(worker, "_run_spec", refused)
+    job = Job.objects.create(org=org, kind="spec", spec={})
+    result = worker.execute(job.pk)
+    assert result.status == "failed"
+    assert result.error == (
+        "internal error: RuntimeError caused by ConnectionRefusedError (Connection refused)"
+    )
+    assert "secret" not in result.error
+
+
 # -- quotas and usage -------------------------------------------------------------------------
 
 
