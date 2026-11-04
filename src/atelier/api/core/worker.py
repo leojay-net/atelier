@@ -140,7 +140,8 @@ def _agent_outcome(job: Job, engine: Engine, res: AgentResult) -> Job:
         return _finish(job, Job.NEEDS_INPUT, **fields)
     reason = {
         "refused": "the request was declined",
-        "budget": "the request needed more steps than the budget allows",
+        "budget": "this was too big to finish in one go. Try asking for fewer slides or "
+        "pictures, or do it in steps (first the pictures, then the video)",
         "no_output": "nothing was produced",
     }.get(res.status, "the agent could not finish")
     return _finish(job, Job.FAILED, error=f"{reason}: {res.detail}".strip(": "), **fields)

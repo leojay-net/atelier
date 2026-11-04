@@ -15,8 +15,10 @@ SOFT_OUTPUT_FRACTION = 0.75
 
 @dataclass(frozen=True)
 class BudgetLimits:
-    max_turns: int = 6
-    max_output_tokens: int = 12_000
+    # 10 turns: a presentation or tutorial finds and makes pictures, previews them, builds and
+    # fixes once; 6 (enough for an edit) ran out in live testing.
+    max_turns: int = 10
+    max_output_tokens: int = 20_000
     max_images: int = 3
 
 
