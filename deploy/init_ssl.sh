@@ -25,13 +25,12 @@ mkdir -p deploy/certbot/conf deploy/certbot/www
 echo "[-] Ensuring port 80 is clear..."
 docker compose stop nginx 2>/dev/null || true
 
-# 2. Remove any manually created dummy directory so Certbot has full control
-if [ -d "deploy/certbot/conf/live/${DOMAIN}" ]; then
-    # If fullchain.pem is not a symlink managed by certbot, remove the manual bootstrap dir
-    if [ ! -L "deploy/certbot/conf/live/${DOMAIN}/fullchain.pem" ]; then
-        echo "[-] Cleaning manual bootstrap directory..."
-        rm -rf "deploy/certbot/conf/live/${DOMAIN}"
-    fi
+# 2. Remove any broken renewal configs or leftover dummy folders from prior failed attempts
+if [ ! -f "deploy/certbot/conf/live/${DOMAIN}/fullchain.pem" ]; then
+    echo "[-] Cleaning any partial or corrupted certbot state..."
+    rm -rf "deploy/certbot/conf/live/${DOMAIN}" \
+           "deploy/certbot/conf/archive/${DOMAIN}" \
+           "deploy/certbot/conf/renewal/${DOMAIN}.conf"
 fi
 
 # 3. Request genuine Let's Encrypt certificate directly via Certbot standalone
