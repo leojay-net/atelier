@@ -46,6 +46,12 @@ def _client_factory() -> ClientFactory:
     return factory
 
 
+def _factory(dotted: str) -> Callable[[], Any]:
+    module, _, name = dotted.rpartition(".")
+    factory: Callable[[], Any] = getattr(importlib.import_module(module), name)
+    return factory
+
+
 def _voice_factory() -> Callable[[], VoiceService | None]:
     module, _, name = settings.ATELIER_VOICE_CLIENT.rpartition(".")
     factory: Callable[[], VoiceService | None] = getattr(importlib.import_module(module), name)
@@ -116,6 +122,8 @@ def _agent_outcome(job: Job, engine: Engine, res: AgentResult) -> Job:
         services.summarize_result(res.engine_result) if res.engine_result is not None else {}
     )
     body.update(summary=res.summary, warnings=list(res.warnings), question=res.question)
+    if res.credits:
+        body["credits"] = list(res.credits)
     fields: dict[str, Any] = {"result": body, "spec": res.spec}
     if res.record is not None:
         fields["units"] = res.record.units()
@@ -224,11 +232,10 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
         telemetry=telemetry,
         plan_cache=PlanCache(engine.home / "plans"),
         voice=_voice_factory()(),
+        pictures=_factory(settings.ATELIER_PICTURES_CLIENT)(),
     )
-    for handle in res.generated:  # voiceovers: show them in the user's assets too
-        services.register_asset(
-            job.org, engine.store.resolve(handle), filename="voiceover.mp3", origin=job
-        )
+    for handle, name in res.generated:  # voiceovers, found and made pictures: the user's too
+        services.register_asset(job.org, engine.store.resolve(handle), filename=name, origin=job)
     return _agent_outcome(job, engine, res)
 
 

@@ -141,6 +141,9 @@ ATELIER_MODEL_NAME = os.environ.get("ATELIER_MODEL_NAME", "")
 # Tests only: let chat links reach a local test server (production refuses private addresses).
 ATELIER_LINKS_ALLOW_PRIVATE = False
 # A factory: () -> VoiceService | None, for the agent's make_voiceover tool (Vultr TTS).
+ATELIER_PICTURES_CLIENT = os.environ.get(  # () -> PictureService: find_images, make_image
+    "ATELIER_PICTURES_CLIENT", "atelier.agent.pictures.from_environment"
+)
 ATELIER_VOICE_CLIENT = os.environ.get(
     "ATELIER_VOICE_CLIENT", "atelier.agent.voice.from_environment"
 )

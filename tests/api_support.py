@@ -30,3 +30,10 @@ voice: Any = None  # set by a test to a fake VoiceService; None means "no voice 
 
 def voice_client() -> Any:
     return voice
+
+
+pictures: Any = None  # set by a test to a fake PictureService; None means "not configured"
+
+
+def pictures_client() -> Any:
+    return pictures

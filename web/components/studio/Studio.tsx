@@ -360,6 +360,16 @@ function Turn({
                 </ul>
               </details>
             ) : null}
+            {job.result?.credits?.length ? (
+              <details className="text-[12px] text-fg-secondary">
+                <summary className="cursor-pointer">Photo credits ({job.result.credits.length})</summary>
+                <ul className="mt-1 list-disc space-y-1 pl-4">
+                  {job.result.credits.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             {!live && steps.length ? (
               <p className="text-[11px] text-fg-tertiary">
                 {[...new Set(steps.map((s) => friendlyGroup([...(s.fused_ops ?? []), s.op])))].join(" · ")}

@@ -1,4 +1,4 @@
-"""The five tools (docs/04 §4.2, plus make_voiceover) and the dispatcher that runs them.
+"""The tools (docs/04 §4.2, plus make_voiceover, find_images, make_image) and their dispatcher.
 
 Definitions are sorted by name and built from constants only, so the serialized tool list is
 byte-stable across processes and releases (it is the first thing in the cached prefix).
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from atelier.agent.budget import Budget
+from atelier.agent.pictures import PictureError, PictureService
 from atelier.agent.voice import DEFAULT_VOICE, MAX_CHARS, VOICES, VoiceError, VoiceService, chunks
 from atelier.av.binaries import find
 from atelier.engine.engine import Engine, format_plan, format_result
@@ -36,6 +38,8 @@ from atelier.spec.errors import SpecInvalid, closest
 MAX_ASSETS_PER_CALL = 20
 MAX_NAMES_PER_CALL = 12
 MAX_VOICEOVERS = 4  # per job
+MAX_FOUND = 12  # pictures found per job
+MAX_MADE = 8  # pictures generated per job
 
 PREVIEW_KINDS = {"thumb": "thumb", "crop": "crop", "compare": "compare", "contact_sheet": "sheet"}
 MEDIA_TYPES = {
@@ -75,6 +79,41 @@ TOOLS: list[dict[str, Any]] = sorted(
                     "detail": {"type": "string", "enum": ["brief", "full"]},
                 },
                 "required": ["assets"],
+            },
+            strict=True,
+        ),
+        _tool(
+            "find_images",
+            "Search the web for real photos (openly licensed, large, credited automatically) and "
+            "get them as image assets. Use it for real things: places, landmarks, products, "
+            'tools, events, real-world scenes. Short concrete queries work best ("laptop '
+            'coding", "Lagos skyline"). Preview what comes back: if it looks dated or '
+            "off-topic, search again or use make_image instead. shape: landscape, portrait or "
+            "square (match the video).",
+            {
+                "properties": {
+                    "query": {"type": "string"},
+                    "count": {"type": "integer", "description": "1 to 6"},
+                    "shape": {"type": "string", "enum": ["landscape", "portrait", "square"]},
+                },
+                "required": ["query", "count", "shape"],
+            },
+            strict=True,
+        ),
+        _tool(
+            "make_image",
+            "Generate one new picture with an AI image model and get it as an image asset; it "
+            "always looks modern and photographic. Use it for illustrative or concept shots, "
+            "people who need not be real, backgrounds for title slides, or when found photos "
+            "look old. Describe the scene in detail (subject, setting, mood, light). Never ask "
+            "for words or code in the picture: add text afterwards with image.text or "
+            "video.text. shape: landscape, portrait or square (match the video).",
+            {
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "shape": {"type": "string", "enum": ["landscape", "portrait", "square"]},
+                },
+                "required": ["prompt", "shape"],
             },
             strict=True,
         ),
@@ -162,9 +201,14 @@ class Toolbox:
     engine: Engine
     budget: Budget
     voice: VoiceService | None = None
+    pictures: PictureService | None = None
     attempts: list[RunAttempt] = field(default_factory=list)
     calls: list[str] = field(default_factory=list)
-    generated: list[str] = field(default_factory=list)  # handles of assets the tools made
+    # assets the tools made or fetched: (handle, filename), and credits for found photos
+    generated: list[tuple[str, str]] = field(default_factory=list)
+    credits: list[str] = field(default_factory=list)
+    found: int = 0
+    made: int = 0
 
     # -- results the loop reads back ------------------------------------------------------
 
@@ -186,7 +230,9 @@ class Toolbox:
             return ToolOutcome(f"{name}: input must be an object", is_error=True)
         handler = {
             "describe_op": self._describe_op,
+            "find_images": self._find_images,
             "inspect_media": self._inspect_media,
+            "make_image": self._make_image,
             "make_voiceover": self._make_voiceover,
             "preview": self._preview,
             "run_pipeline": self._run_pipeline,
@@ -235,6 +281,76 @@ class Toolbox:
             lines.append(f"… {len(handles) - MAX_ASSETS_PER_CALL} more assets ignored (max 20)")
         return ToolOutcome("\n".join(lines), is_error=error)
 
+    def _find_images(self, args: dict[str, Any]) -> ToolOutcome:
+        query = " ".join(str(args.get("query") or "").split())[:120]
+        count = args.get("count") if isinstance(args.get("count"), int) else 3
+        count = max(1, min(6, count, MAX_FOUND - self.found))
+        shape = (
+            args.get("shape") if args.get("shape") in ("landscape", "portrait", "square") else ""
+        )
+        if not query:
+            return ToolOutcome("find_images: query must not be empty", is_error=True)
+        if self.pictures is None:
+            return ToolOutcome("find_images: not available on this server", is_error=True)
+        if self.found >= MAX_FOUND:
+            return ToolOutcome(
+                f"find_images: at most {MAX_FOUND} pictures per request", is_error=True
+            )
+        try:
+            results = self.pictures.search(query, count, shape)
+        except PictureError as e:
+            return ToolOutcome(f"find_images: {e}", is_error=True)
+        if not results:
+            return ToolOutcome(
+                f"find_images: nothing usable for {query!r}; try a simpler query or make_image",
+                is_error=True,
+            )
+        lines = []
+        for f in results:
+            try:
+                info = self.engine.store.put_bytes(self.pictures.download(f))
+            except (PictureError, OSError) as e:
+                lines.append(f"(skipped one: {e})")
+                continue
+            if info.media is not MediaType.IMAGE:
+                continue
+            self.found += 1
+            self.credits.append(f.credit)
+            self.generated.append((info.handle, _slug(f.title, "found") + info.ext))
+            lines.append(f"{info.handle} · image {f.width}x{f.height} · {f.credit}")
+        if not any(line.startswith("asset:") for line in lines):
+            return ToolOutcome(
+                "find_images: none of the results could be downloaded", is_error=True
+            )
+        return ToolOutcome("\n".join(lines))
+
+    def _make_image(self, args: dict[str, Any]) -> ToolOutcome:
+        prompt = " ".join(str(args.get("prompt") or "").split())[:1500]
+        shape = (
+            args.get("shape")
+            if args.get("shape") in ("landscape", "portrait", "square")
+            else "square"
+        )
+        if not prompt:
+            return ToolOutcome("make_image: prompt must not be empty", is_error=True)
+        if self.pictures is None:
+            return ToolOutcome("make_image: not available on this server", is_error=True)
+        if self.made >= MAX_MADE:
+            return ToolOutcome(
+                f"make_image: at most {MAX_MADE} pictures per request", is_error=True
+            )
+        try:
+            data = self.pictures.generate(prompt, shape)
+            info = self.engine.store.put_bytes(data)
+        except (PictureError, OSError) as e:
+            return ToolOutcome(f"make_image: {e}", is_error=True)
+        if info.media is not MediaType.IMAGE:
+            return ToolOutcome("make_image: the service did not return a picture", is_error=True)
+        self.made += 1
+        self.generated.append((info.handle, _slug(prompt, "made") + info.ext))
+        w, h = self.engine.probe(info).get("display") or (0, 0)
+        return ToolOutcome(f"{info.handle} · image {w}x{h} · generated")
+
     def _make_voiceover(self, args: dict[str, Any]) -> ToolOutcome:
         text = " ".join(str(args.get("text") or "").split())
         voice = args.get("voice") or DEFAULT_VOICE
@@ -257,7 +373,7 @@ class Toolbox:
                 "service configured); tell the user instead",
                 is_error=True,
             )
-        if len(self.generated) >= MAX_VOICEOVERS:
+        if sum(1 for _, n in self.generated if n.endswith(".mp3")) >= MAX_VOICEOVERS:
             return ToolOutcome(
                 f"make_voiceover: at most {MAX_VOICEOVERS} voiceovers per request; reuse one",
                 is_error=True,
@@ -266,7 +382,7 @@ class Toolbox:
             info = self._speak(text, voice)
         except (VoiceError, subprocess.CalledProcessError, OSError) as e:
             return ToolOutcome(f"make_voiceover: {e}", is_error=True)
-        self.generated.append(info.handle)
+        self.generated.append((info.handle, "voiceover.mp3"))
         duration = self.engine.probe(info).get("duration") or 0.0
         return ToolOutcome(
             f"{info.handle} · audio · voiceover {duration:.2f}s · voice {voice} · "
@@ -378,6 +494,11 @@ class Toolbox:
     def _attempt(self, spec: Any, result: JobResult | None, dry_run: bool) -> None:
         if not dry_run:
             self.attempts.append(RunAttempt(spec, result, result is not None and result.passed))
+
+
+def _slug(text: str, prefix: str) -> str:
+    words = re.findall(r"[a-z0-9]+", text.lower())[:6]
+    return f"{prefix}-{'-'.join(words) or 'picture'}"[:60]
 
 
 def _strings(value: Any) -> list[str]:

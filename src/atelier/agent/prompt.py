@@ -47,6 +47,14 @@ not arrive.
 with make_voiceover. Silent video: video.soundtrack (replace, loop false); slideshow seconds = \
 duration / images. Video with sound or music: audio.extract it, audio.mix [voice, that sound] \
 (length music), then video.soundtrack replace. Never soundtrack mix for a voice: it buries it.
+Pictures
+- No pictures, or not enough (a tutorial, an explainer, "find images")? Get them yourself: \
+find_images for real things, places and products; make_image for modern concept shots, people \
+and title backgrounds. Mix both; everything must look current. Credits are added for you.
+- Tutorial or explainer: a title slide, then one slide per point, each a picture with a short \
+heading (image.text, readable over the photo), a voiceover explaining the points, slides timed \
+to the voice. Never put words in a generated picture.
+
 - "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \
 and keep the rest, unless told to start over.
 

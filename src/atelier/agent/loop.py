@@ -20,6 +20,7 @@ from typing import Any
 from atelier.agent.budget import Budget
 from atelier.agent.client import MessagesClient, MissingCredentials
 from atelier.agent.config import AgentConfig
+from atelier.agent.pictures import PictureService
 from atelier.agent.plan_cache import PlanCache, plan_key
 from atelier.agent.prompt import FINAL_SCHEMA, catalogue_version, system_blocks
 from atelier.agent.providers.anthropic import AnthropicAdapter
@@ -57,7 +58,8 @@ class AgentResult:
     spec: Any = None  # the spec that produced `outputs`
     engine_result: JobResult | None = None
     record: JobRecord | None = None
-    generated: tuple[str, ...] = ()  # handles of assets the tools made (voiceovers)
+    generated: tuple[tuple[str, str], ...] = ()  # (handle, filename) the tools made or fetched
+    credits: tuple[str, ...] = ()  # attribution lines for photos found online
 
     @property
     def ok(self) -> bool:
@@ -74,6 +76,7 @@ def run_job(
     telemetry: Telemetry | None = None,
     plan_cache: PlanCache | None = None,
     voice: VoiceService | None = None,
+    pictures: PictureService | None = None,
 ) -> AgentResult:
     """`client` (today's Anthropic-shaped `MessagesClient`) or `adapter` (any `ModelAdapter`,
     `providers/`), not both. `client` stays for every existing caller: it is wrapped in
@@ -96,8 +99,9 @@ def run_job(
     counted = True
     try:
         result = _run(
-            job, infos, system, version, record, engine, adapter, config, plan_cache, voice
-        )
+            job, infos, system, version, record, engine, adapter, config, plan_cache,
+            voice, pictures,
+        )  # fmt: skip
         record.status = result.status
         result.record = record
         return result
@@ -121,6 +125,7 @@ def _run(
     config: AgentConfig,
     plan_cache: PlanCache | None,
     voice: VoiceService | None = None,
+    pictures: PictureService | None = None,
 ) -> AgentResult:
     key = plan_key(job.prompt, (i.hash for i in infos), version, config.model)
     if plan_cache is not None and (hit := _replay(plan_cache, key, engine)) is not None:
@@ -128,7 +133,7 @@ def _run(
         return hit
 
     budget = Budget(config.limits)
-    toolbox = Toolbox(engine, budget, voice=voice)
+    toolbox = Toolbox(engine, budget, voice=voice, pictures=pictures)
     history = adapter.initial_history(_user_text(job, infos, engine))
     max_tokens, retried = config.max_tokens, False
 
@@ -147,6 +152,7 @@ def _run(
             spec=best.spec if best else None,
             engine_result=best.result if best else None,
             generated=tuple(toolbox.generated),
+            credits=tuple(dict.fromkeys(toolbox.credits)),
         )
 
     while True:
@@ -280,6 +286,11 @@ def _call_detail(call: Any) -> str:
             ops = [s.get("op") if isinstance(s, dict) else s[0] for s in steps if s]
             return " → ".join(str(o) for o in ops if o)
         return ""
+    if call.name == "find_images":
+        return f"“{str(args.get('query', ''))[:80]}” × {args.get('count', '')}"
+    if call.name == "make_image":
+        text = " ".join(str(args.get("prompt", "")).split())
+        return f"“{text[:140]}{'…' if len(text) > 140 else ''}”"
     if call.name in ("inspect_media", "preview"):
         return f"{len(args.get('assets') or [])} file(s)"
     if call.name == "describe_op":
