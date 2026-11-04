@@ -113,6 +113,7 @@ def test_requests_need_a_valid_key() -> None:
     assert api.get("/me").json() == {
         "org": {"slug": "acme", "name": "Acme"},
         "key": {"name": "test", "prefix": ApiKey.objects.get().prefix},
+        "user": None,  # an organization key, not a person's sign-in session
     }
     ApiKey.objects.update(revoked_at=timezone.now())
     assert api.get("/me").status_code == 401  # revoked

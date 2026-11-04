@@ -1,6 +1,8 @@
 import "server-only";
 import type { NextRequest } from "next/server";
-import { apiBase, apiKey } from "@/lib/server/env";
+import { apiBase } from "@/lib/server/env";
+import { sessionToken } from "@/lib/server/session";
+import { notSignedIn } from "../notSignedIn";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,12 +18,14 @@ export const runtime = "nodejs";
  * buffering once here is an acceptable trade for a passthrough that actually works.
  */
 async function forward(req: NextRequest, segments: string[]): Promise<Response> {
+  const token = await sessionToken();
+  if (!token) return notSignedIn();
   const target = `${apiBase()}/${segments.map(encodeURIComponent).join("/")}${req.nextUrl.search}`;
 
   const headers = new Headers();
   const contentType = req.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
-  headers.set("Authorization", `Bearer ${apiKey()}`);
+  headers.set("Authorization", `Bearer ${token}`);
 
   const hasBody = !["GET", "HEAD"].includes(req.method);
   const body = hasBody ? await req.arrayBuffer() : undefined;

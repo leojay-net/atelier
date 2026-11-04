@@ -19,11 +19,19 @@ from django.utils import timezone
 from ninja import File, NinjaAPI, Status
 from ninja.files import UploadedFile
 
-from atelier.api.core import services
+from atelier.api.core import accounts, services
 from atelier.api.core.auth import ApiKeyAuth
 from atelier.api.core.models import Asset, Job, Org, SavedRecipe
 from atelier.api.core.queue import enqueue
-from atelier.api.core.schemas import BrandKitIn, JobIn, RecipeIn, SaveRecipeIn, SpecIn
+from atelier.api.core.schemas import (
+    BrandKitIn,
+    JobIn,
+    LoginIn,
+    RecipeIn,
+    SaveRecipeIn,
+    SignupIn,
+    SpecIn,
+)
 from atelier.api.core.services import ApiError
 from atelier.engine.engine import Engine, format_plan
 from atelier.media import AssetNotFound, HandleError, MediaType
@@ -58,7 +66,27 @@ def me(request: HttpRequest) -> dict[str, Any]:
     return {
         "org": {"slug": org.slug, "name": org.name},
         "key": {"name": key.name, "prefix": key.prefix},
+        "user": {"email": key.user.email} if key.user_id else None,
     }
+
+
+# -- accounts (the web UI's sign-up / sign-in; see accounts.py) ---------------------------------
+
+
+@api.post("/auth/signup", auth=None, response={201: dict[str, Any]})
+def signup(request: HttpRequest, body: SignupIn) -> Status[dict[str, Any]]:
+    return Status(201, accounts.signup(body.email, body.password, body.password_confirm))
+
+
+@api.post("/auth/login", auth=None)
+def login(request: HttpRequest, body: LoginIn) -> dict[str, Any]:
+    return accounts.login(body.email, body.password)
+
+
+@api.post("/auth/logout", response={204: None})
+def logout(request: HttpRequest) -> Status[None]:
+    accounts.logout(request.api_key)  # type: ignore[attr-defined]
+    return Status(204, None)
 
 
 @api.get("/ops")

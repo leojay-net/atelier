@@ -48,18 +48,9 @@ docker build -f docker/app.Dockerfile -t atelier-app .
 docker build -f docker/baseline.Dockerfile -t atelier-baseline .
 docker build -f web/Dockerfile -t atelier-web ./web
 
-# 4. Migrate database and create default organization
-echo "[-] Running migrations and initializing default organization..."
+# 4. Migrate database (people create their own accounts on the web UI's sign-up page)
+echo "[-] Running migrations..."
 docker compose run --rm api manage migrate
-echo "[-] Creating default organization 'vultr-demo'..."
-KEY_OUTPUT=$(docker compose run --rm api manage create_org vultr-demo "Vultr Agent Demo" 2>&1 || true)
-echo "$KEY_OUTPUT"
-
-# Extract API key if created
-API_KEY=$(echo "$KEY_OUTPUT" | grep -o 'atk_[a-zA-Z0-9_-]*' | head -n1 || true)
-if [ -n "$API_KEY" ]; then
-    echo "ATELIER_API_KEY=${API_KEY}" >> .env
-fi
 
 # 5. Start stack
 echo "[-] Launching Atelier services with Docker Compose..."

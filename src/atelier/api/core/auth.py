@@ -20,8 +20,12 @@ _TOUCH_EVERY = 300  # seconds between last_used_at writes for one key
 def find_key(token: str) -> ApiKey | None:
     if not token.startswith(f"{KEY_PREFIX}_"):
         return None
-    key = ApiKey.objects.select_related("org").filter(key_hash=ApiKey.digest(token)).first()
+    key = ApiKey.objects.select_related("org", "user").filter(key_hash=ApiKey.digest(token)).first()
     if key is None or not key.active:
+        return None
+    from atelier.api.core.accounts import session_expired
+
+    if session_expired(key):
         return None
     now = timezone.now()
     if key.last_used_at is None or (now - key.last_used_at).total_seconds() > _TOUCH_EVERY:

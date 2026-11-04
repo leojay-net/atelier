@@ -1,6 +1,8 @@
 import "server-only";
 import type { NextRequest } from "next/server";
-import { apiBase, apiKey } from "@/lib/server/env";
+import { apiBase } from "@/lib/server/env";
+import { sessionToken } from "@/lib/server/session";
+import { notSignedIn } from "../../notSignedIn";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,7 +24,9 @@ export async function GET(
   const after = req.nextUrl.searchParams.get("after");
   const lastEventId = req.headers.get("last-event-id");
 
-  const headers = new Headers({ Authorization: `Bearer ${apiKey()}` });
+  const token = await sessionToken();
+  if (!token) return notSignedIn();
+  const headers = new Headers({ Authorization: `Bearer ${token}` });
   if (lastEventId) headers.set("Last-Event-ID", lastEventId);
 
   const upstream = await fetch(

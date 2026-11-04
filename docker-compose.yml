@@ -10,9 +10,10 @@
 #
 # Run:
 #   ATELIER_SECRET_KEY=$(openssl rand -hex 32) VULTR_INFERENCE_API_KEY=your_key docker compose up -d
-#   docker compose run --rm api manage create_org acme "Acme Studio"     # prints an API key
 #
-# Add the key to .env (ATELIER_API_KEY=atk_...) for the web UI service.
+# People sign up on the web UI (email + password); each account gets its own private
+# workspace. For programmatic access, `docker compose run --rm api manage create_org acme
+# "Acme Studio"` prints an API key for a separate organization.
 
 x-atelier: &atelier
   image: atelier-app
@@ -53,7 +54,6 @@ services:
       dockerfile: Dockerfile
     environment:
       ATELIER_API_BASE: http://api:8000/api/v1
-      ATELIER_API_KEY: ${ATELIER_API_KEY:-}
     ports:
       - "127.0.0.1:3000:3000"   # public traffic comes through nginx (HTTPS) only
     depends_on:
