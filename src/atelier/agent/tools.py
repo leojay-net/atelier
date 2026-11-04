@@ -274,8 +274,8 @@ class Toolbox:
         )
 
     def _speak(self, text: str, voice: str) -> Any:
-        """One MP3 from the whole script: each chunk spoken, then joined and re-encoded once
-        so the file has a single clean header and an exact duration."""
+        """One MP3 from the whole script: each chunk spoken, then joined, brought to -16 LUFS
+        and re-encoded once, so the file has a single clean header and an exact duration."""
         assert self.voice is not None
         work = Path(tempfile.mkdtemp(prefix="voice-", dir=self.engine.store.tmp))
         parts = []
@@ -290,6 +290,9 @@ class Toolbox:
             [
                 find("ffmpeg"), "-hide_banner", "-nostdin", "-v", "error", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(listing),
+                # TTS comes out quiet (about -26 dB): bring it to web-video loudness, and end on
+                # a short silence so a fade at the end of the video never cuts the last word
+                "-af", "loudnorm=I=-16:TP=-1.5:LRA=11,apad=pad_dur=0.6",
                 "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-map_metadata", "-1",
                 str(out),
             ],

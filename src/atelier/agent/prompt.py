@@ -43,9 +43,10 @@ Sound
 silent: use an attached audio asset; with none, run nothing and ask: music (they attach it), a \
 voiceover you write, or silence. If the request mentions audio that is not listed, say it did \
 not arrive.
-- Voiceover: write the script unless given (warm, conversational, ~2.5 words/second), speak it \
-with make_voiceover, fit the picture to its duration (slideshow: seconds = duration / images; \
-video: keep the voice shorter), add it with video.soundtrack (replace, loop false) or audio.mix.
+- Voiceover: write the script unless given (warm, ~2.5 words/second), speak it \
+with make_voiceover. Silent video: video.soundtrack (replace, loop false); slideshow seconds = \
+duration / images. Video with sound or music: audio.extract it, audio.mix [voice, that sound] \
+(length music), then video.soundtrack replace. Never soundtrack mix for a voice: it buries it.
 - "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \
 and keep the rest, unless told to start over.
 
