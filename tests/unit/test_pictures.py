@@ -233,6 +233,7 @@ def test_commons_results_keep_reusable_licenses_and_put_recent_photos_first(
     monkeypatch.setattr(pictures, "_get_json", fake_get)
     monkeypatch.setattr(pictures.time, "sleep", lambda s: None)
     found = pictures.OpenverseAndVultr(None, None, "m").search("friends", 5, "landscape")
-    assert [f.title for f in found] == ["Photo 3", "Photo 4", "Photo 1"]  # recent, undated, old
+    assert [f.title for f in found] == ["Photo 3", "Photo 1", "Photo 4"]  # recent, then dated
+    # old, then undated (on Commons usually a scan of an old artwork)
     assert found[0].credit == '"Photo 3" by Artist 3, CC BY 2.0 (via Wikimedia Commons)'
     assert found[0].year == 2024 and found[0].url == "https://upload.example/3.jpg"

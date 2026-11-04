@@ -176,7 +176,8 @@ class OpenverseAndVultr:
                     title=title,
                     credit=f'"{title}" by {artist}, {license_} (via Wikimedia Commons)',
                     source_page=info.get("descriptionurl", ""),
-                    year=int(year.group(0)) if year else None,
+                    # undated Commons files are often scans of old artworks: rank them as old
+                    year=int(year.group(0)) if year else 1900,
                 )
             )
         return found
