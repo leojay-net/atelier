@@ -22,7 +22,7 @@ import { isTerminal } from "@/lib/types";
 import { useJobLive } from "@/hooks/useJobLive";
 import { useUpload, type UploadItem } from "@/hooks/useUpload";
 import { contentUrl } from "@/components/media/MediaPreview";
-import { activityLines, friendlyOp } from "@/lib/activity";
+import { activityLines, friendlyGroup } from "@/lib/activity";
 import { readApiError } from "@/lib/errors";
 import { RETRY_STORAGE_KEY } from "@/components/jobs/JobDetail";
 
@@ -198,8 +198,8 @@ function Stage({
             In this project
           </p>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {[...allOutputs.map((o) => ({ handle: o.handle, media: o.media, label: "Result" })),
-              ...inputs.map((h) => ({ handle: h, media: assets[h]?.media, label: assets[h]?.filename ?? "file" }))].map(
+            {[...allOutputs.map((o, n) => ({ handle: o.handle, media: o.media, label: "Result", tag: `V${n + 1}` })),
+              ...inputs.map((h) => ({ handle: h, media: assets[h]?.media, label: assets[h]?.filename ?? "file", tag: "" }))].map(
               (f) => (
                 <button
                   key={f.handle + f.label}
@@ -225,7 +225,7 @@ function Stage({
                   )}
                   {f.label === "Result" ? (
                     <span className="absolute left-1 top-1 rounded bg-accent px-1 text-[9px] font-semibold text-on-accent">
-                      RESULT
+                      {f.tag}
                     </span>
                   ) : null}
                 </button>
@@ -362,7 +362,7 @@ function Turn({
             ) : null}
             {!live && steps.length ? (
               <p className="text-[11px] text-fg-tertiary">
-                {[...new Set(steps.map((s) => friendlyOp(s.op)))].join(" · ")}
+                {[...new Set(steps.map((s) => friendlyGroup([...(s.fused_ops ?? []), s.op])))].join(" · ")}
                 {seconds(job) ? ` · ${seconds(job)}` : ""}
               </p>
             ) : null}
@@ -505,8 +505,8 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
   const placeholder = asking
     ? "Type your answer…"
     : thread.length
-      ? "Ask for a change, e.g. “add a voiceover” or “make it shorter”…"
-      : "Tell me what to make, e.g. “a short reel from my photos with this song”…";
+      ? "Ask for a change…"
+      : "What should I make?";
 
   return (
     <div

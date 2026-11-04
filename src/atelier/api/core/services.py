@@ -225,6 +225,7 @@ def event_dict(event: JobEvent) -> dict[str, Any]:
 
 def summarize_result(result: JobResult) -> dict[str, Any]:
     """A finished run as plain data: outputs with summaries, per-output checks, step timings."""
+    ops_by_id = {st.id: st.op.name for st in result.spec.steps}
     return {
         "outputs": {
             out_id: {
@@ -250,6 +251,8 @@ def summarize_result(result: JobResult) -> dict[str, Any]:
                 "cached": s.cached,
                 "seconds": round(s.seconds, 3),
                 "fused": list(s.fused),
+                # the ops of the fused steps, so a client can say what the whole run did
+                "fused_ops": [ops_by_id.get(f, "") for f in s.fused],
             }
             for s in result.steps
         ],
