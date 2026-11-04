@@ -191,3 +191,48 @@ def test_generation_adds_the_modern_style_and_needs_a_key(monkeypatch: pytest.Mo
     )
     assert out == b"hello" and sent["size"] == "864x1536" and sent["model"] == "qwen-image-2.1"
     assert sent["prompt"].startswith("a cat ") and "No text" in sent["prompt"]
+
+
+def test_commons_results_keep_reusable_licenses_and_put_recent_photos_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def page(i: int, license_: str, year: str, w: int = 4000, h: int = 3000) -> dict[str, Any]:
+        return {
+            "index": i,
+            "title": f"File:Photo {i}.jpg",
+            "imageinfo": [
+                {
+                    "width": w, "height": h, "mime": "image/jpeg",
+                    "thumburl": f"https://upload.example/{i}.jpg",
+                    "extmetadata": {
+                        "LicenseShortName": {"value": license_},
+                        "Artist": {"value": f"<a href='x'>Artist {i}</a>"},
+                        "DateTimeOriginal": {"value": year},
+                    },
+                }
+            ],
+        }  # fmt: skip
+
+    commons = {
+        "query": {
+            "pages": {
+                "1": page(1, "CC BY-SA 4.0", "2009-05-01"),
+                "2": page(2, "CC BY-NC 2.0", "2024-01-01"),  # not reusable commercially
+                "3": page(3, "CC BY 2.0", "2024-03-02"),
+                "4": page(4, "Public domain", ""),
+                "5": page(5, "CC BY 4.0", "2023", w=600, h=400),  # too small
+            }
+        }
+    }
+
+    def fake_get(req: Any, timeout: float) -> dict[str, Any]:
+        if "wikimedia" in req.full_url:
+            return commons
+        raise PictureError("the picture service answered 403: rate limited")
+
+    monkeypatch.setattr(pictures, "_get_json", fake_get)
+    monkeypatch.setattr(pictures.time, "sleep", lambda s: None)
+    found = pictures.OpenverseAndVultr(None, None, "m").search("friends", 5, "landscape")
+    assert [f.title for f in found] == ["Photo 3", "Photo 4", "Photo 1"]  # recent, undated, old
+    assert found[0].credit == '"Photo 3" by Artist 3, CC BY 2.0 (via Wikimedia Commons)'
+    assert found[0].year == 2024 and found[0].url == "https://upload.example/3.jpg"
