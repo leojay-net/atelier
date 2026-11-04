@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,6 +22,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 OPENVERSE = "https://api.openverse.org/v1/images/"
+COMMONS = "https://commons.wikimedia.org/w/api.php"
+RECENT_YEAR = 2015  # photos taken since then rank first ("looks current")
 SHAPES = {"landscape": "1536x864", "portrait": "864x1536", "square": "1024x1024"}
 ASPECT = {"landscape": "wide", "portrait": "tall", "square": "square"}
 # Appended to every generation prompt so pictures look current and photographic by default.
@@ -28,7 +32,7 @@ MODERN = (
     "sharp focus, clean composition, vibrant but realistic colors. No text, no letters, "
     "no watermarks, no logos."
 )
-USER_AGENT = "Atelier/1.0 (media agent; contact via site)"
+USER_AGENT = "Atelier/1.0 (media agent; https://github.com/leojay-net/atelier)"
 
 
 class PictureError(Exception):
@@ -43,6 +47,7 @@ class Found:
     title: str
     credit: str  # e.g. '"Team meeting" by Jane Doe, CC BY 2.0'
     source_page: str
+    year: int | None = None  # when it was taken, if known
 
 
 class PictureService(Protocol):
@@ -69,9 +74,30 @@ class OpenverseAndVultr:
         self.vultr_base, self.vultr_key, self.model = vultr_base, vultr_key, model
 
     def search(self, query: str, count: int, shape: str) -> list[Found]:
+        """Wikimedia Commons and Openverse together (either can be rate-limited or empty),
+        only licenses that allow reuse and editing, recent photos first."""
+        results: list[Found] = []
+        errors = []
+        for source in (self._commons, self._openverse):
+            try:
+                results += source(query, count * 3, shape)
+            except PictureError as e:
+                errors.append(str(e))
+        if not results and errors:
+            raise PictureError(errors[0])
+        seen: set[str] = set()
+        unique = [f for f in results if not (f.url in seen or seen.add(f.url))]
+
+        def rank(f: Found) -> tuple[int, int, int]:
+            tier = 1 if f.year is None else 0 if f.year >= RECENT_YEAR else 2
+            return (tier, -(f.year or 0), -(f.width * f.height))
+
+        return sorted(unique, key=rank)[:count]
+
+    def _openverse(self, query: str, count: int, shape: str) -> list[Found]:
         params = {
             "q": query,
-            "page_size": str(min(20, count * 4)),  # over-fetch, then keep the best
+            "page_size": str(min(20, count)),
             "license_type": "commercial,modification",
             "category": "photograph",
             "size": "large",
@@ -82,7 +108,11 @@ class OpenverseAndVultr:
         req = urllib.request.Request(
             OPENVERSE + "?" + urllib.parse.urlencode(params), headers={"User-Agent": USER_AGENT}
         )
-        results = _get_json(req, 30).get("results") or []
+        try:
+            results = _get_json(req, 30).get("results") or []
+        except PictureError:
+            time.sleep(2)  # anonymous use is rate-limited (20/min); one polite retry
+            results = _get_json(req, 30).get("results") or []
         found = []
         for r in results:
             w, h = int(r.get("width") or 0), int(r.get("height") or 0)
@@ -103,8 +133,53 @@ class OpenverseAndVultr:
                     source_page=r.get("foreign_landing_url") or "",
                 )
             )
-        found.sort(key=lambda f: -(f.width * f.height))  # biggest first: they look newest
-        return found[:count]
+        return found
+
+    def _commons(self, query: str, count: int, shape: str) -> list[Found]:
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": f"{query} filetype:bitmap",
+            "gsrnamespace": "6",
+            "gsrlimit": str(min(30, count)),
+            "prop": "imageinfo",
+            "iiprop": "url|size|extmetadata|mime",
+            "iiurlwidth": "1600",
+            "iiextmetadatafilter": "LicenseShortName|Artist|ObjectName|DateTimeOriginal",
+        }
+        req = urllib.request.Request(
+            COMMONS + "?" + urllib.parse.urlencode(params), headers={"User-Agent": USER_AGENT}
+        )
+        pages = (_get_json(req, 30).get("query") or {}).get("pages") or {}
+        found = []
+        for page in sorted(pages.values(), key=lambda p: p.get("index", 0)):
+            info = (page.get("imageinfo") or [{}])[0]
+            meta = info.get("extmetadata") or {}
+            license_ = _meta(meta, "LicenseShortName")
+            w, h = int(info.get("width") or 0), int(info.get("height") or 0)
+            if not _reusable(license_) or min(w, h) < 900:
+                continue
+            if info.get("mime") not in ("image/jpeg", "image/png", "image/webp"):
+                continue
+            if shape and _shape(w, h) != shape:
+                continue
+            title = _meta(meta, "ObjectName") or page.get("title", "").removeprefix("File:")
+            title = re.sub(r"\.(jpe?g|png|webp)$", "", title, flags=re.I)[:80]
+            artist = _meta(meta, "Artist")[:60] or "unknown"
+            year = re.search(r"(19|20)\d\d", _meta(meta, "DateTimeOriginal"))
+            found.append(
+                Found(
+                    url=info.get("thumburl") or info.get("url", ""),
+                    width=w,
+                    height=h,
+                    title=title,
+                    credit=f'"{title}" by {artist}, {license_} (via Wikimedia Commons)',
+                    source_page=info.get("descriptionurl", ""),
+                    year=int(year.group(0)) if year else None,
+                )
+            )
+        return found
 
     def download(self, found: Found) -> bytes:
         """The photo's bytes, through the same guards as chat links (public hosts only)."""
@@ -152,6 +227,24 @@ class OpenverseAndVultr:
                 return resp.read(30 << 20)
         except (urllib.error.URLError, TimeoutError):
             raise PictureError("the generated picture could not be downloaded") from None
+
+
+def _meta(meta: dict, key: str) -> str:  # type: ignore[type-arg]
+    """A Commons extmetadata value as plain text (it is often HTML)."""
+    value = str((meta.get(key) or {}).get("value") or "")
+    return " ".join(re.sub(r"<[^>]+>", " ", value).split())
+
+
+def _reusable(license_: str) -> bool:
+    """Licenses that allow commercial reuse and editing: public domain, CC0, CC BY, CC BY-SA."""
+    parts = license_.lower().replace(" ", "-").split("-")
+    if "nc" in parts or "nd" in parts:
+        return False
+    return license_.lower().startswith(("public domain", "cc0", "pd", "cc by"))
+
+
+def _shape(w: int, h: int) -> str:
+    return "landscape" if w > h * 1.15 else "portrait" if h > w * 1.15 else "square"
 
 
 def from_environment() -> PictureService:
