@@ -320,6 +320,33 @@ def test_overlay_records_its_box_for_the_safe_area_check(
     assert 0 <= x < 0.1 and 0 <= y < 0.1 and 0.1 < w < 0.2 and h > 0
 
 
+@pytest.mark.parametrize("anchor", ["top_right", "bottom_left", "bottom_right", "top_left"])
+def test_a_corner_logo_on_a_reel_stays_inside_the_platform_safe_area(
+    engine: Engine, clip: str, logo: str, anchor: str
+) -> None:
+    """The everyday ask, "make it a Reel with my logo in the corner", with default margins."""
+    result = engine.run(
+        {
+            "version": 1,
+            "inputs": {"v": clip, "logo": logo},
+            "steps": [
+                {"id": "t", "op": "video.trim", "in": "v", "args": {"end": 1}},
+                {"id": "r", "op": "video.reframe", "in": "t", "args": {"aspect": "9:16"}},
+                {"id": "o", "op": "video.overlay", "in": ["r", "logo"], "args": {"anchor": anchor}},
+                {
+                    "id": "out",
+                    "op": "export",
+                    "in": "o",
+                    "args": {"preset": "reels_1080x1920", "overrides": FAST},
+                },
+            ],
+            "outputs": ["out"],
+        }
+    )
+    safe = {r.name: r for r in result.checks["out"]}["safe_margins"]
+    assert safe.status.value == "pass", safe.line()
+
+
 # -- presets and checks ------------------------------------------------------------------------
 
 

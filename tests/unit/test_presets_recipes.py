@@ -68,8 +68,10 @@ def test_catalogue_stays_small() -> None:
     was hidden from the catalogue and both visible descriptions were trimmed first), then to 3040
     when image.upscale and video.upscale shipped (video.upscale hidden, same trade as stabilize:
     the more specialized of the pair; both descriptions trimmed first). Each bump covers only what
-    hiding the niche op and trimming left over, not headroom for the next one."""
-    assert len(full_catalogue(load_builtin_ops())) / 4 < 3040
+    hiding the niche op and trimming left over, not headroom for the next one. Then to 3240 for
+    video.crop, video.pip and video.lower_third (video.transition hidden: video.concat's
+    `transition` covers it; most of the rest is the generated argument lists of pip/lower_third)."""
+    assert len(full_catalogue(load_builtin_ops())) / 4 < 3240
 
 
 def errors(engine: Engine, spec: Any) -> list[str]:

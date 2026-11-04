@@ -5,6 +5,18 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Live user test fixes (2026-11-04, docs/13)
+- `video.overlay` 1.0.0 → 1.1.0: on a vertical frame the image is kept inside the Reels / TikTok /
+  Shorts safe area (top 14 %, bottom 20 %, sides 6 %, plus a 1 % inset), so a corner logo no longer
+  fails `safe_margins` with the default margin. Landscape placement is unchanged.
+- `image.text`, `video.text`, `video.captions`, `video.lower_third` 1.0.0 → 1.0.1: invisible
+  characters (zero-width joiners, variation selectors) are dropped instead of drawn as empty boxes,
+  and text with characters the bundled fonts cannot draw (emoji, CJK, …) fails with the characters
+  named instead of rendering "tofu". Golden hashes unchanged (versions only).
+- `video.speed` accepts `factor=0.25` (quarter-speed slow motion); the bound was exclusive.
+- `video.transition` hidden from the catalogue (still callable); catalogue budget 3040 → 3240 for
+  `video.crop`, `video.pip` and `video.lower_third`.
+
 ### Phase 6: ML plugins (in progress)
 - New `atelier.ml` and `atelier.models`. Ops at 1.0.0 (`SEEDED_ML`): `image.remove_background`, `transcribe`
   (video or audio → SRT text), `audio.denoise_speech`. Recipe `auto_captioned_reel` v1. `atelier models

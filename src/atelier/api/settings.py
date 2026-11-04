@@ -79,6 +79,14 @@ if "sqlite" in _engine:
         "default": {
             "ENGINE": _engine,
             "NAME": os.environ.get("ATELIER_DB_NAME", DATA_DIR / "db.sqlite3"),
+            # The API and several workers write at once (job claims, progress events): WAL lets
+            # readers run beside a writer, IMMEDIATE takes the write lock up front instead of
+            # failing mid-transaction, and the timeout waits for it instead of "database is locked".
+            "OPTIONS": {
+                "timeout": 20,
+                "transaction_mode": "IMMEDIATE",
+                "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+            },
         }
     }
 else:
@@ -120,9 +128,10 @@ ATELIER_S3_ENDPOINT = os.environ.get("ATELIER_S3_ENDPOINT", "")  # e.g. a MinIO 
 ATELIER_OBJECT_BACKEND = (
     "atelier.api.core.clients.object_backend"  # a factory: () -> backend | None
 )
-ATELIER_MODEL_CLIENT = (
-    "atelier.api.core.clients.ollama_client"  # a factory: () -> ModelAdapter
-    # also: atelier.api.core.clients.{anthropic_client,openai_client,gemini_client}
+# A factory: () -> ModelAdapter. Read from the environment (docker-compose sets it); the default is
+# Vultr Serverless Inference. Also: atelier.api.core.clients.{anthropic,openai,gemini,ollama}_client
+ATELIER_MODEL_CLIENT = os.environ.get(
+    "ATELIER_MODEL_CLIENT", "atelier.api.core.clients.vultr_client"
 )
 # The model name for ATELIER_MODEL_CLIENT's provider. Empty keeps AgentConfig's own default
 # (Claude's DEFAULT_MODEL) -- set this whenever the client above isn't anthropic_client, e.g.

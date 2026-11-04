@@ -38,13 +38,13 @@ services:
     <<: *atelier
     command: ["api"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # public traffic comes through nginx (HTTPS) only
 
   worker:
     <<: *atelier
     command: ["worker"]
     deploy:
-      replicas: 1
+      replicas: 2   # a second job can run while the first waits on the model
 
   web:
     image: atelier-web
@@ -55,7 +55,7 @@ services:
       ATELIER_API_BASE: http://api:8000/api/v1
       ATELIER_API_KEY: ${ATELIER_API_KEY:-}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"   # public traffic comes through nginx (HTTPS) only
     depends_on:
       - api
 

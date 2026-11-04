@@ -19,7 +19,7 @@ from pydantic import Field, field_validator, model_validator
 
 from atelier import fonts
 from atelier.ops.image._io import Box, boxes_of, has_alpha, image_op, load, make_box, save
-from atelier.ops.registry import Artifact, Determinism, OpContext, Params
+from atelier.ops.registry import Artifact, Determinism, OpContext, OpError, Params
 from atelier.spec.types import Color, Fraction, choice, parse_color, rgba
 
 MIN_PX = 6
@@ -110,6 +110,34 @@ def _font(family: str, weight: str, px: int) -> ImageFont.FreeTypeFont:
     )
 
 
+@functools.cache
+def _covered(family: str, weight: str) -> frozenset[int]:
+    from fontTools.ttLib import TTFont
+
+    with TTFont(str(fonts.font_path(family, weight)), lazy=True) as tt:
+        return frozenset(tt.getBestCmap())
+
+
+# Invisible joiners and selectors (ZWJ, variation selectors, BOM) draw nothing in any font.
+_INVISIBLE = {0x200B, 0x200C, 0x200D, 0x2060, 0xFE0E, 0xFEFF} | set(range(0xFE00, 0xFE10))
+
+
+def check_glyphs(text: str, family: str, weight: str) -> None:
+    """Fail with the exact characters a bundled font cannot draw (CJK, emoji, …), instead of
+    rendering empty boxes ("tofu") that every automatic check would pass."""
+    covered = _covered(family, weight)
+    missing = sorted(
+        {c for c in text if not c.isspace() and ord(c) not in _INVISIBLE and ord(c) not in covered}
+    )
+    if missing:
+        shown = " ".join(missing[:12]) + (" …" if len(missing) > 12 else "")
+        raise OpError(
+            f"the {family} font cannot draw these characters: {shown}. Text supports Latin, "
+            "Greek and Cyrillic letters, digits and punctuation; remove the others (emoji, "
+            "Chinese, Japanese, Korean, Arabic, …)"
+        )
+
+
 def _wrap(text: str, font: ImageFont.FreeTypeFont, max_w: float) -> list[str]:
     lines: list[str] = []
     for para in text.split("\n"):
@@ -184,6 +212,8 @@ def render_text(
     kind: str = "text",
 ) -> tuple[Image.Image, Box]:
     """Draw one text block into `box` (fractions) and return the image plus its layout box."""
+    text = "".join(c for c in text if ord(c) not in _INVISIBLE)  # would draw as empty boxes
+    check_glyphs(text, style.font, style.weight)
     W, H = im.size
     bx, by = round(box[0] * W), round(box[1] * H)
     bw, bh = max(1, round(box[2] * W)), max(1, round(box[3] * H))
@@ -289,7 +319,7 @@ def _is_large(px: int, weight: str) -> bool:
 
 @image_op(
     name="image.text",
-    version="1.0.0",
+    version="1.0.1",
     params=TextParams,
     description="typeset text in a box; auto-fit, wrap, stroke, shadow, contrast guard",
     determinism=Determinism.PERCEPTUAL,

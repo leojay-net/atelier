@@ -8,6 +8,7 @@ terms of what the previous steps produced.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, TypeVar
 
@@ -192,9 +193,7 @@ class VideoCropParams(Params):
         if not (0 <= left < 1 and 0 <= top < 1 and 0 < width <= 1 and 0 < height <= 1):
             raise ValueError(f"box values must be within (0, 1], got {self.box}")
         if left + width > 1.001 or top + height > 1.001:
-            raise ValueError(
-                f"box reaches outside frame: {left+width:.3f}w, {top+height:.3f}h"
-            )
+            raise ValueError(f"box reaches outside frame: {left + width:.3f}w, {top + height:.3f}h")
         return self
 
 
@@ -222,7 +221,9 @@ def crop(g: Graph, p: VideoCropParams) -> None:
 
 
 class SpeedParams(Params):
-    factor: float = Field(gt=0.25, le=4.0, description="2 plays twice as fast, 0.5 half as fast")
+    factor: float = Field(
+        ge=0.25, le=4.0, description="2 = twice as fast, 0.5 = half, 0.25 = quarter-speed slow-mo"
+    )
 
 
 def _atempo_chain(factor: float) -> list[float]:
@@ -330,9 +331,30 @@ _ANCHOR = {
 }  # fmt: skip
 
 
+# The platform UI zones of the vertical presets (reels/tiktok/shorts_1080x1920 `safe_area`), as
+# fractions of the frame. A logo anchored in a corner of a vertical video would otherwise sit
+# under the app's buttons and always fail the safe_margins check.
+_SOCIAL_SAFE = {"top": 0.14, "bottom": 0.20, "left": 0.06, "right": 0.06}
+
+
+def _inside_social_safe_area(x: int, y: int, w: int, h: int, W: int, H: int) -> tuple[int, int]:
+    """Move a box the least distance that puts it inside the vertical presets' safe area
+    (if it fits; a box bigger than the area keeps its position)."""
+    pad = 0.01  # a little inside the line: rounding and a later upscale must not cross it
+    lo_x = math.ceil(W * (_SOCIAL_SAFE["left"] + pad))
+    hi_x = math.floor(W * (1 - _SOCIAL_SAFE["right"] - pad)) - w
+    lo_y = math.ceil(H * (_SOCIAL_SAFE["top"] + pad))
+    hi_y = math.floor(H * (1 - _SOCIAL_SAFE["bottom"] - pad)) - h
+    if lo_x <= hi_x:
+        x = min(max(x, lo_x), hi_x)
+    if lo_y <= hi_y:
+        y = min(max(y, lo_y), hi_y)
+    return x, y
+
+
 @video_op(
     name="video.overlay",
-    version="1.0.0",
+    version="1.1.0",
     params=OverlayParams,
     inputs=(MediaType.VIDEO, MediaType.IMAGE),
     description="place an image (logo) on the video, optionally for a time range",
@@ -349,6 +371,8 @@ def overlay(g: Graph, p: OverlayParams) -> None:
     fx, fy = _ANCHOR[p.anchor]
     x = round(fx * (g.width - ow - 2 * margin)) + margin
     y = round(fy * (g.height - oh - 2 * margin)) + margin
+    if g.height > g.width:  # vertical: stay clear of the Reels / TikTok / Shorts UI zones
+        x, y = _inside_social_safe_area(x, y, ow, oh, g.width, g.height)
     (img,) = g.add("scale", {"w": ow, "h": oh, "flags": "lanczos"}, ins=[g.extra_label(0)])
     if p.opacity < 1:
         (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
