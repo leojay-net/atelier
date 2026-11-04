@@ -10,7 +10,7 @@ import numpy as np
 from pydantic import Field, model_validator
 
 from atelier import models
-from atelier.av.ducking import ANALYSIS_RATE, CONTROL_RATE, duck_curve
+from atelier.av.ducking import ANALYSIS_RATE, CONTROL_RATE, RELEASE_S, duck_curve
 from atelier.av.export import Loudness, apply_loudness, av_summary
 from atelier.av.graph import Graph, Source, num
 from atelier.media import MediaType
@@ -270,11 +270,14 @@ class MixParams(Params):
     music_volume: Fraction = Field(0.25, ge=0.02, le=1.0, description="music level, 1 = unchanged")
     duck: bool = Field(True, description="lower the music while the first input (voice) speaks")
     duck_db: float = Field(14.0, ge=3, le=30, description="how far the music drops, in dB")
+    length: Literal["voice", "music"] = Field(
+        "voice", description="as long as the voice, or as the music (a short voice over a song)"
+    )
 
 
 @audio_op(
     name="audio.mix",
-    version="2.0.0",
+    version="2.1.0",
     params=MixParams,
     inputs=(AUDIO, AUDIO),
     description="mix music under a voice, ducking the music when the voice is present",
@@ -282,20 +285,36 @@ class MixParams(Params):
 def mix(g: Graph, p: MixParams) -> None:
     """Mix the second input (music) under the first (voice). With `duck`, the music drops by
     `duck_db` while the voice speaks: it eases down just before the voice starts and back up
-    slowly after it stops. The result lasts as long as the voice.
+    slowly after it stops. The result lasts as long as the voice, or with `length` music as
+    long as the music: the voice is padded with silence and the music comes back up after it.
 
     The ducking curve is computed from the decoded voice and applied as a gain, not by a
     compressor filter, so the result is identical on every run and every ffmpeg version."""
     assert g.audio is not None
     layout = {"sample_rates": 48000, "channel_layouts": "stereo"}
+    voice_audio = g.audio
     (voice,) = g.add("aformat", {"sample_fmts": "fltp", **layout}, ins=[g.audio], prefix="a")
+    total = None
+    if p.length == "music":
+        total = g.extra_stream(0).duration
+        if not total:
+            raise OpError("the music's length is not known, so the mix cannot follow it")
+        (voice,) = g.add("apad", {"whole_dur": num(total)}, ins=[voice], prefix="a")
+        (voice,) = g.add("atrim", {"end": num(total)}, ins=[voice], prefix="a")
     (music,) = g.add(
         "aformat", {"sample_fmts": "fltp", **layout}, ins=[g.extra_audio_label(0)], prefix="a"
     )
     (music,) = g.add("volume", {"volume": p.music_volume}, ins=[music], prefix="a")
     if p.duck:
-        pcm = np.frombuffer(g.render_pcm(g.audio, ANALYSIS_RATE), dtype=np.float32)
+        pcm = np.frombuffer(g.render_pcm(voice_audio, ANALYSIS_RATE), dtype=np.float32)
         gains = duck_curve(pcm, duck_db=p.duck_db)
+        if total is not None:  # after the voice: ease back to full music, then hold it
+            need = int(np.ceil(total * CONTROL_RATE)) + CONTROL_RATE // 10
+            if need > len(gains):
+                last = float(gains[-1]) if len(gains) else 1.0
+                ramp = np.linspace(last, 1.0, int(RELEASE_S * CONTROL_RATE), dtype=np.float32)
+                hold = np.ones(max(0, need - len(gains) - len(ramp)), dtype=np.float32)
+                gains = np.concatenate([gains, ramp, hold]).astype(np.float32)[:need]
         track = g.write_file("duck0.raw", gains.tobytes())
         index = g.add_source(
             Source(
@@ -316,3 +335,5 @@ def mix(g: Graph, p: MixParams) -> None:
         prefix="a",
     )
     g.sample_rate, g.channels = 48000, 2
+    if total is not None:
+        g.duration = total

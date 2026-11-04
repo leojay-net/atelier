@@ -363,6 +363,23 @@ def test_mix_volume_sets_the_music_level_and_lasts_as_long_as_the_voice(
     assert abs(float(probe(out_path(engine, result))["format"]["duration"]) - 4.0) < 0.05
 
 
+def test_a_short_voice_over_a_longer_song_keeps_the_whole_song(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """length=music: a 2 s voice over 8 s of music lasts 8 s; the music dips under the voice
+    and comes back to its full level afterwards (the live "add a voice to my reel" case)."""
+    voice = tone(tmp_path / "v.wav", "sine=frequency=440:duration=2", seconds=2.0)
+    music = tone(tmp_path / "m.wav", "sine=frequency=200:duration=8", seconds=8.0)
+    v, m = engine.store.put_file(voice).handle, engine.store.put_file(music).handle
+    path = out_path(engine, engine.run(mix_spec(v, m, music_volume=0.5, length="music")))
+    assert abs(float(probe(path)["format"]["duration"]) - 8.0) < 0.05
+    x = samples(path)
+    under, after = band(x, 200, 0.6, 1.6), band(x, 200, 4.0, 7.5)
+    assert after > 0.055 and under < after * 0.6  # ducked under the voice; after it, full
+    # level again (ffmpeg sine amplitude 0.125 x music_volume 0.5)
+    assert band(x, 440, 0.6, 1.6) > 0.1 and band(x, 440, 4.0, 7.5) < 0.01  # voice, then none
+
+
 # -- the ducking curve: pure ---------------------------------------------------------------------
 
 

@@ -42,8 +42,10 @@ def register(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p.add_argument("--out", default="out", help="directory for outputs (default: ./out)")
     p.add_argument("--provider", choices=PROVIDERS, default="anthropic")
     p.add_argument(
-        "--model", default=DEFAULT_MODEL, help=f"default is Claude's {DEFAULT_MODEL!r}; pass "
-        "a model name that matches --provider for anything else"
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"default is Claude's {DEFAULT_MODEL!r}; pass "
+        "a model name that matches --provider for anything else",
     )
     p.add_argument("--effort", choices=EFFORTS, default="high")
     p.add_argument("--no-fallbacks", action="store_true", help="do not re-run refusals elsewhere")
@@ -143,15 +145,19 @@ def cmd_ask(engine: Engine, args: argparse.Namespace) -> int:
     model = args.model
     if args.provider == "vultr" and model == DEFAULT_MODEL:
         import os
+
         model = os.environ.get("VULTR_MODEL", "llama-3.3-70b-instruct")
     elif args.provider == "openai" and model == DEFAULT_MODEL:
         import os
+
         model = os.environ.get("OPENAI_MODEL", "gpt-4o")
     elif args.provider == "ollama" and model == DEFAULT_MODEL:
         import os
+
         model = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
     elif args.provider == "gemini" and model == DEFAULT_MODEL:
         import os
+
         model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
     config = AgentConfig(model=model, effort=args.effort, fallbacks=not args.no_fallbacks)

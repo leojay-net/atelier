@@ -5,6 +5,15 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Live chat test fixes (2026-11-04)
+- `audio.mix` 2.0.0 → 2.1.0: `length` (`voice` default, unchanged; or `music`): a short voice
+  over a longer song keeps the whole song, the music ducking under the voice and easing back to
+  full level after it. Before, "add a voice to my reel" either cut the song at the end of the
+  voice or (with `video.soundtrack` mix) buried the voice under full-volume music.
+- `make_voiceover` output is loudness-normalized to -16 LUFS (TTS arrives around -26 dB) and
+  ends with 0.6 s of silence, so a closing fade never cuts the last word.
+- `step_start` progress events list every op fused into the run (`ops`).
+
 ### Live user test fixes (2026-11-04, docs/13)
 - `video.overlay` 1.0.0 → 1.1.0: on a vertical frame the image is kept inside the Reels / TikTok /
   Shorts safe area (top 14 %, bottom 20 %, sides 6 %, plus a 1 % inset), so a corner logo no longer
