@@ -85,6 +85,8 @@ export interface JobResult {
   warnings?: string[];
   /** Set when status is "needs_input": the agent's clarifying question. */
   question?: string;
+  /** Attribution lines for photos the AI found online. */
+  credits?: string[];
 }
 
 export interface Job {

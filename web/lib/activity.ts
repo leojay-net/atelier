@@ -52,6 +52,8 @@ const TOOLS: Record<string, string> = {
   preview: "Taking a closer look at your pictures",
   describe_op: "Checking my editing tools",
   make_voiceover: "Recording the voiceover",
+  find_images: "Searching the web for pictures",
+  make_image: "Creating a picture",
   run_pipeline: "Editing",
 };
 
