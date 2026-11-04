@@ -178,6 +178,46 @@ def reframe(g: Graph, p: ReframeParams) -> None:
     g.width, g.height = nw, nh
 
 
+# -- crop --------------------------------------------------------------------------------------
+
+
+class VideoCropParams(Params):
+    box: tuple[float, float, float, float] = Field(
+        description="crop rectangle [left, top, width, height] as fractions 0..1 of the frame"
+    )
+
+    @model_validator(mode="after")
+    def _valid_box(self) -> VideoCropParams:
+        left, top, width, height = self.box
+        if not (0 <= left < 1 and 0 <= top < 1 and 0 < width <= 1 and 0 < height <= 1):
+            raise ValueError(f"box values must be within (0, 1], got {self.box}")
+        if left + width > 1.001 or top + height > 1.001:
+            raise ValueError(
+                f"box reaches outside frame: {left+width:.3f}w, {top+height:.3f}h"
+            )
+        return self
+
+
+@video_op(
+    name="video.crop",
+    version="1.0.0",
+    params=VideoCropParams,
+    description="crop video to a bounding box [left, top, width, height] in fractions",
+)
+def crop(g: Graph, p: VideoCropParams) -> None:
+    """Crop the video to the bounding box [left, top, width, height], where each value is a
+    fraction (0..1) of the input frame. Output width and height are rounded to even numbers."""
+    left, top, width, height = p.box
+    cw = _even(round(g.width * width))
+    ch = _even(round(g.height * height))
+    cx = _even(round(g.width * left))
+    cy = _even(round(g.height * top))
+    if cw < 2 or ch < 2:
+        raise OpError(f"crop dimensions too small: {cw}x{ch}")
+    g.vf("crop", {"w": cw, "h": ch, "x": cx, "y": cy})
+    g.width, g.height = cw, ch
+
+
 # -- speed -------------------------------------------------------------------------------------
 
 

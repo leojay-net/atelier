@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
+from atelier import fonts
 from atelier.av.graph import Graph, Source, num
 from atelier.av.ops import video_op
 from atelier.av.subtitles import Cue, parse
@@ -217,3 +218,131 @@ def captions(g: Graph, p: CaptionsParams) -> None:
         raise OpError("the captions drew nothing: the cues have no printable characters")
     _record(g, "captions", f"captions ({len(cues)} cues)", drawn)
     g.notes["captions"] = {"cues": len(cues), "style": p.style, "position": p.position}
+
+
+# -- lower third -------------------------------------------------------------------------------
+
+
+class LowerThirdParams(Params):
+    name: str = Field(description="speaker name or main headline (e.g. 'Jane Doe')")
+    title: str | None = Field(
+        None, description="secondary title, role, or company (e.g. 'Founder & CEO')"
+    )
+    start: Timecode = Field(1.0, ge=0, description="timestamp in seconds when lower third appears")
+    duration: Timecode = Field(5.0, ge=0.5, le=30.0, description="duration to display in seconds")
+    accent_color: Color = Field(
+        "#3b82f6ff", description="accent color for the highlight bar or pill"
+    )
+    card_color: Color = Field(
+        "#0f172ae6", description="card background color (RGBA hex, e.g. #0f172ae6)"
+    )
+    text_color: Color = Field(
+        "#ffffffff", description="primary text color for name"
+    )
+    title_color: Color = Field(
+        "#94a3b8ff", description="secondary text color for title"
+    )
+    position: Literal["bottom_left", "bottom_center", "bottom_right"] = Field(
+        "bottom_left", description="horizontal alignment along the lower third"
+    )
+
+
+def _render_lower_third(p: LowerThirdParams, frame: tuple[int, int]) -> Layer:
+    from PIL import Image, ImageDraw, ImageFont
+
+    from atelier.spec.types import rgba
+
+    W, H = frame
+    font_family = "Inter"
+    try:
+        f_name_path = fonts.font_path(font_family, "bold")
+        f_title_path = fonts.font_path(font_family, "regular")
+    except Exception:
+        f_name_path = fonts.font_path(fonts.DEFAULT_FAMILY, "bold")
+        f_title_path = fonts.font_path(fonts.DEFAULT_FAMILY, "regular")
+
+    name_size = max(14, round(H * 0.034))
+    title_size = max(11, round(H * 0.022))
+
+    font_name = ImageFont.truetype(str(f_name_path), name_size)
+    font_title = ImageFont.truetype(str(f_title_path), title_size)
+
+    dummy_img = Image.new("RGBA", (1, 1))
+    draw_dummy = ImageDraw.Draw(dummy_img)
+    name_box = draw_dummy.textbbox((0, 0), p.name, font=font_name)
+    name_w = round(name_box[2] - name_box[0])
+    name_h = round(name_box[3] - name_box[1])
+
+    title_w, title_h = 0, 0
+    if p.title:
+        t_box = draw_dummy.textbbox((0, 0), p.title, font=font_title)
+        title_w = round(t_box[2] - t_box[0])
+        title_h = round(t_box[3] - t_box[1])
+
+    content_w = max(name_w, title_w)
+    pad_x = round(H * 0.025)
+    pad_y = round(H * 0.015)
+    bar_w = round(H * 0.008)
+    gap = round(H * 0.008) if p.title else 0
+
+    card_w = int(content_w + pad_x * 2 + bar_w + round(H * 0.01))
+    card_h = int(name_h + title_h + gap + pad_y * 2)
+    corner_radius = round(card_h * 0.18)
+
+    card = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(card)
+
+    bg_rgba = rgba(p.card_color)
+    accent_rgba = rgba(p.accent_color)
+    text_rgba = rgba(p.text_color)
+    title_rgba = rgba(p.title_color)
+
+    draw.rounded_rectangle([0, 0, card_w, card_h], radius=corner_radius, fill=bg_rgba)
+
+    bar_x = round(pad_x * 0.6)
+    draw.rounded_rectangle(
+        [bar_x, pad_y, bar_x + bar_w, card_h - pad_y],
+        radius=round(bar_w / 2),
+        fill=accent_rgba,
+    )
+
+    tx = bar_x + bar_w + round(H * 0.015)
+    ty = pad_y
+    draw.text((tx, ty), p.name, font=font_name, fill=text_rgba)
+    if p.title:
+        draw.text((tx, ty + name_h + gap), p.title, font=font_title, fill=title_rgba)
+
+    margin_x = round(W * 0.06)
+    margin_y = round(H * 0.12)
+
+    if p.position == "bottom_left":
+        pos_x = int(margin_x)
+    elif p.position == "bottom_right":
+        pos_x = int(W - card_w - margin_x)
+    else:
+        pos_x = int((W - card_w) // 2)
+
+    pos_y = int(H - card_h - margin_y)
+    drawn = (pos_x / W, pos_y / H, card_w / W, card_h / H)
+    return Layer(card, pos_x, pos_y, drawn)
+
+
+@video_op(
+    name="video.lower_third",
+    version="1.0.0",
+    params=LowerThirdParams,
+    description="branded speaker name and title card overlay in lower third",
+    also=("pillow", "icc", "fonts"),
+)
+def lower_third(g: Graph, p: LowerThirdParams) -> None:
+    """Display a professional branded lower-third card with speaker name and subtitle/role.
+    Automatically sized, typeset in Inter, and positioned in the lower third."""
+    total = g.duration
+    if total is not None and p.start >= total:
+        raise OpError(f"lower third starts at {p.start:g}s but the video is only {total:.2f}s long")
+    frame = (g.width, g.height)
+    layer = _render_lower_third(p, frame)
+    end = p.start + p.duration
+    if total is not None:
+        end = min(end, total)
+    _record(g, "lower_third", p.name, [_place(g, layer, p.start, end)])
