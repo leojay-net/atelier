@@ -25,20 +25,20 @@ mkdir -p deploy/certbot/conf deploy/certbot/www
 echo "[-] Ensuring port 80 is clear..."
 docker compose stop nginx 2>/dev/null || true
 
-# 2. Remove any broken renewal configs or leftover dummy folders from prior failed attempts
+# 2. If no valid certificate exists yet, clean out any corrupted renewal/archive state
 if [ ! -f "deploy/certbot/conf/live/${DOMAIN}/fullchain.pem" ]; then
-    echo "[-] Cleaning any partial or corrupted certbot state..."
-    rm -rf "deploy/certbot/conf/live/${DOMAIN}" \
-           "deploy/certbot/conf/archive/${DOMAIN}" \
-           "deploy/certbot/conf/renewal/${DOMAIN}.conf"
+    echo "[-] Cleaning partial or uninitialized certbot directory..."
+    rm -rf deploy/certbot/conf/* deploy/certbot/www/*
 fi
 
 # 3. Request genuine Let's Encrypt certificate directly via Certbot standalone
+# Note: we explicitly pass --entrypoint certbot so it executes certonly instead of the renewal loop
 echo "[-] Requesting genuine Let's Encrypt certificate..."
-docker compose run --rm -p 80:80 certbot certonly --standalone \
+docker compose run --rm -p 80:80 --entrypoint certbot certbot certonly --standalone \
     -d "${DOMAIN}" \
     --email "${EMAIL}" \
     --agree-tos \
+    --no-eff-email \
     --non-interactive
 
 # 4. Start Nginx and background auto-renewal
