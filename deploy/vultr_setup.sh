@@ -56,7 +56,7 @@ KEY_OUTPUT=$(docker compose run --rm api manage create_org vultr-demo "Vultr Age
 echo "$KEY_OUTPUT"
 
 # Extract API key if created
-API_KEY=$(echo "$KEY_OUTPUT" | grep -o 'atk_[a-zA-Z0-9_]*' | head -n1 || true)
+API_KEY=$(echo "$KEY_OUTPUT" | grep -o 'atk_[a-zA-Z0-9_-]*' | head -n1 || true)
 if [ -n "$API_KEY" ]; then
     echo "ATELIER_API_KEY=${API_KEY}" >> .env
 fi
