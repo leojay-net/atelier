@@ -5,6 +5,14 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Live picture test fixes (2026-11-04)
+- `video.slideshow` 1.0.0 → 1.1.0: new mode `blur` (the default): a picture of another shape is
+  shown whole over a blurred, slightly darkened copy of itself. Before, a landscape family photo
+  in a vertical reel was center-cropped and lost both parents.
+- Prompt: text slides crop the picture to the video's aspect before adding text (a title placed
+  near the bottom of a 4:3 photo was cut off by the slideshow's crop) and use `background: auto`;
+  tutorials teach concretely (real steps, a short real example such as a line of code).
+
 ### Live chat test fixes (2026-11-04)
 - `audio.mix` 2.0.0 → 2.1.0: `length` (`voice` default, unchanged; or `music`): a short voice
   over a longer song keeps the whole song, the music ducking under the voice and easing back to

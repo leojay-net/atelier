@@ -75,6 +75,24 @@ def _conform(g: Graph, clip: Stream, mode: str, size: tuple[int, int], fps: floa
                 "pad", {"w": W, "h": H, "x": "(ow-iw)/2", "y": "(oh-ih)/2", "color": "black"},
                 ins=[v], prefix="v",
             )  # fmt: skip
+        elif mode == "blur":  # the whole picture over a blurred, enlarged copy of itself
+            back, front = g.add("split", {"outputs": 2}, ins=[v], outs=2, prefix="v")
+            (back,) = g.add(
+                "scale",
+                {"w": W, "h": H, "force_original_aspect_ratio": "increase", "flags": "bilinear"},
+                ins=[back],
+                prefix="v",
+            )
+            (back,) = g.add("crop", {"w": W, "h": H}, ins=[back], prefix="v")
+            (back,) = g.add("boxblur", {"luma_radius": 28, "luma_power": 2}, ins=[back], prefix="v")
+            (back,) = g.add("eq", {"brightness": -0.08}, ins=[back], prefix="v")
+            (front,) = g.add(
+                "scale",
+                {"w": W, "h": H, "force_original_aspect_ratio": "decrease", "flags": "lanczos"},
+                ins=[front],
+                prefix="v",
+            )
+            (v,) = g.add("overlay", {"x": "(W-w)/2", "y": "(H-h)/2"}, ins=[back, front], prefix="v")
         else:
             (v,) = g.add(
                 "scale",
@@ -205,8 +223,10 @@ class SlideshowParams(Params):
     shape: Shape = Field("landscape", description="landscape 16:9, portrait 9:16 or square")
     short_side: int = Field(1080, ge=240, le=2160, description="px of the shorter side")
     fps: Literal[24, 25, 30] = Field(30, description="frames per second")
-    mode: Literal["fit", "fill"] = Field(
-        "fit", description="pictures of another shape: fit pads with black, fill crops"
+    mode: Literal["blur", "fit", "fill"] = Field(
+        "blur",
+        description="pictures of another shape: blur shows all of it over a blurred copy, fit "
+        "pads with black, fill crops (can cut off heads)",
     )
     fade: Timecode = Field(
         0.0, ge=0, le=5, description="crossfade between pictures in seconds; 0 is a cut"
@@ -229,7 +249,7 @@ def _frame_size(shape: str, short: int) -> tuple[int, int]:
 
 @video_op(
     name="video.slideshow",
-    version="1.0.0",
+    version="1.1.0",
     params=SlideshowParams,
     inputs=(MediaType.IMAGE, MediaType.IMAGE),
     variadic=True,

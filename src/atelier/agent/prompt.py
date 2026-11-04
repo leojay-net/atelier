@@ -51,9 +51,11 @@ Pictures
 - No pictures, or not enough (a tutorial, an explainer, "find images")? Get them yourself: \
 find_images for real things, places and products; make_image for modern concept shots, people \
 and title backgrounds. Mix both; everything must look current. Credits are added for you.
-- Tutorial or explainer: a title slide, then one slide per point, each a picture with a short \
-heading (image.text, readable over the photo), a voiceover explaining the points, slides timed \
+- Tutorial or explainer: a title slide, then one slide per point that teaches concretely (real \
+steps, a short real example such as one line of code), a voiceover explaining it, slides timed \
 to the voice. Never put words in a generated picture.
+- Text on a picture: image.crop it to the video's aspect first (focus attention), then \
+image.text with background auto. Photos of people: never slideshow mode fill (it cuts heads).
 
 - "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \
 and keep the rest, unless told to start over.
