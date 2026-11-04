@@ -17,7 +17,10 @@ Or `docker compose up` (see `docker-compose.yml`). Settings are environment vari
 ## Endpoints
 | | |
 |---|---|
-| `GET /me` | The organization and key you are using |
+| `POST /auth/signup` `{email, password, password_confirm}` | No key needed. Creates an account and its own private organization; `201 {token, expires_in, user, org}`. `400` `invalid_email` / `password_mismatch` / `weak_password`, `409` `email_taken` |
+| `POST /auth/login` `{email, password}` | No key needed. `200 {token, expires_in, user, org}`: a session key (an API key named `web session`, valid 30 days). `401` `invalid_credentials`; `429` after 10 failures for one email (15 min) |
+| `POST /auth/logout` | Revokes the session key used for the call (`204`); other API keys are unaffected |
+| `GET /me` | The organization and key you are using, and the user for a session key |
 | `GET /ops`, `GET /ops/{name}` | The catalogue (ops, presets, recipes) and the detail of one, as the agent reads them |
 | `POST /validate` `{spec}` | `{valid, steps, runs, cached, plan}` or `{valid: false, errors: [...]}`; runs nothing |
 | `POST /assets` (multipart `file`) | Upload. `201 {handle, media, ext, size, filename}`; identical bytes give the same handle. `413` too large, `415` unsupported |

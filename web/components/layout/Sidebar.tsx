@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Image as ImageIcon, ListChecks, BookMarked, Settings, Wand2 } from "lucide-react";
+import { Image as ImageIcon, ListChecks, BookMarked, LogOut, Settings, Wand2 } from "lucide-react";
+import { logout } from "@/app/(auth)/actions";
 import clsx from "clsx";
 
 const NAV = [
@@ -13,7 +14,7 @@ const NAV = [
   { href: "/settings", label: "Keys", icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ email }: { email: string }) {
   const pathname = usePathname();
 
   return (
@@ -41,6 +42,20 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <div className="mt-auto border-t border-border px-3 py-3">
+        <p className="truncate px-2.5 text-[12px] text-fg-secondary" title={email}>
+          {email}
+        </p>
+        <form action={logout}>
+          <button
+            type="submit"
+            className="mt-1 flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm font-medium text-fg-secondary transition-colors hover:bg-bg-inset hover:text-fg"
+          >
+            <LogOut size={17} strokeWidth={2} />
+            Sign out
+          </button>
+        </form>
+      </div>
     </aside>
   );
 }

@@ -42,3 +42,14 @@ class BrandKitIn(Schema):
     rules: list[str] = Field(default_factory=list, max_length=50)
     logo: str | None = None
     logo_dark: str | None = None
+
+
+class SignupIn(Schema):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=256)
+    password_confirm: str = Field(max_length=256)
+
+
+class LoginIn(Schema):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=256)
