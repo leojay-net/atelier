@@ -8,55 +8,43 @@ DOMAIN="${1:-${DOMAIN:-209.250.229.110.sslip.io}}"
 EMAIL="${2:-${EMAIL:-admin@${DOMAIN}}}"
 
 echo "============================================================"
-echo " Setting up Let's Encrypt SSL"
-echo " Domain: $DOMAIN"
-echo " Email : $EMAIL"
+echo " Setting up Let's Encrypt SSL for: $DOMAIN"
+echo " Notification email: $EMAIL"
 echo "============================================================"
 
-# Ensure DOMAIN and CORS origins in .env
+# Ensure DOMAIN in .env
 if ! grep -q "^DOMAIN=" .env 2>/dev/null; then
     echo "DOMAIN=${DOMAIN}" >> .env
 else
     sed -i "s/^DOMAIN=.*/DOMAIN=${DOMAIN}/" .env
 fi
 
-# Ensure data directories exist
 mkdir -p deploy/certbot/conf deploy/certbot/www
 
-CERT_DIR="deploy/certbot/conf/live/${DOMAIN}"
+# 1. Stop Nginx so port 80 is completely free for Certbot standalone validation
+echo "[-] Ensuring port 80 is clear..."
+docker compose stop nginx 2>/dev/null || true
 
-# 1. Generate temporary self-signed certificate if none exists
-if [ ! -f "${CERT_DIR}/fullchain.pem" ]; then
-    echo "[-] Generating bootstrap certificate so Nginx can start..."
-    mkdir -p "${CERT_DIR}"
-    openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
-        -keyout "${CERT_DIR}/privkey.pem" \
-        -out "${CERT_DIR}/fullchain.pem" \
-        -subj "/CN=localhost"
+# 2. Remove any manually created dummy directory so Certbot has full control
+if [ -d "deploy/certbot/conf/live/${DOMAIN}" ]; then
+    # If fullchain.pem is not a symlink managed by certbot, remove the manual bootstrap dir
+    if [ ! -L "deploy/certbot/conf/live/${DOMAIN}/fullchain.pem" ]; then
+        echo "[-] Cleaning manual bootstrap directory..."
+        rm -rf "deploy/certbot/conf/live/${DOMAIN}"
+    fi
 fi
 
-# 2. Start Nginx
-echo "[-] Starting Nginx..."
-docker compose up -d nginx
-
-# 3. Request official Let's Encrypt certificate using certbot container
-echo "[-] Requesting Let's Encrypt SSL certificate via certbot..."
-docker compose run --rm --entrypoint "\
-  certbot certonly --webroot -w /var/www/certbot \
-    -d ${DOMAIN} \
-    --email ${EMAIL} \
-    --rsa-key-size 4096 \
+# 3. Request genuine Let's Encrypt certificate directly via Certbot standalone
+echo "[-] Requesting genuine Let's Encrypt certificate..."
+docker compose run --rm -p 80:80 certbot certonly --standalone \
+    -d "${DOMAIN}" \
+    --email "${EMAIL}" \
     --agree-tos \
-    --force-renewal \
-    --non-interactive" certbot
+    --non-interactive
 
-# 4. Reload Nginx with genuine certificate
-echo "[-] Reloading Nginx with new certificate..."
-docker compose exec nginx nginx -s reload
-
-# 5. Start certbot background renewal service
-echo "[-] Starting automated certificate renewal daemon..."
-docker compose up -d certbot
+# 4. Start Nginx and background auto-renewal
+echo "[-] Starting Nginx and renewal daemon..."
+docker compose up -d nginx certbot
 
 echo "============================================================"
 echo " SSL Successfully Configured with Let's Encrypt!"
