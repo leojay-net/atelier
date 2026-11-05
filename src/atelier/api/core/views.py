@@ -7,6 +7,7 @@ or streamed) and its outputs.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import mimetypes
 import tempfile
@@ -16,10 +17,10 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.http import FileResponse, HttpRequest, HttpResponse
 from django.utils import timezone
-from ninja import File, NinjaAPI, Status
+from ninja import File, Form, NinjaAPI, Status
 from ninja.files import UploadedFile
 
-from atelier.agent.voice import ACCENTS, DEFAULT_VOICE, PEOPLE, VOICES
+from atelier.agent.voice import ACCENTS, DEFAULT_VOICE, MY_VOICE, PASSAGE, PEOPLE, VOICES
 from atelier.api.core import accounts, services
 from atelier.api.core.auth import ApiKeyAuth
 from atelier.api.core.models import Asset, Job, Org, SavedRecipe
@@ -206,6 +207,7 @@ def voices(request: HttpRequest) -> dict[str, Any]:
     """The voiceover voices a user can choose: an accent, each with a woman's and a man's."""
     return {
         "default": DEFAULT_VOICE,
+        "mine": bool((_org(request).my_voice or {}).get("handle")),
         "accents": [
             {"id": a, "label": label, "voices": [{"id": f"{a}_{g}", "label": g} for g in PEOPLE]}
             for a, (label, _) in ACCENTS.items()
@@ -223,11 +225,115 @@ def rename_conversation(request: HttpRequest, job_id: str, body: ChatIn) -> dict
 
 
 @api.delete("/conversations/{job_id}")
-def delete_conversation(request: HttpRequest, job_id: str) -> dict[str, Any]:
-    """Remove a chat from the list (every message in it). What it made stays in the Library."""
+def delete_conversation(request: HttpRequest, job_id: str, files: bool = False) -> dict[str, Any]:
+    """Remove a chat from the list (every message in it). With `files`, also delete what it
+    made (results, and the voiceovers, music and pictures made or found for it); otherwise
+    they stay in the Library. The user's own uploads are always kept."""
+    org = _org(request)
     chain = services.thread_jobs(services.latest_in_thread(_job(request, job_id)))
+    removed = services.delete_chat_files(org, chain) if files else 0
     Job.objects.filter(pk__in=[j.pk for j in chain]).update(chat_deleted=True)
-    return {"deleted": len(chain)}
+    return {"deleted": len(chain), "files_deleted": removed}
+
+
+# -- the user's own voice ---------------------------------------------------------------------
+
+MY_VOICE_SECONDS = (4.0, 30.0)  # shortest and longest recording kept
+
+
+@api.get("/my-voice")
+def get_my_voice(request: HttpRequest) -> dict[str, Any]:
+    mine = _org(request).my_voice or {}
+    return {
+        "recorded": bool(mine.get("handle")),
+        "created_at": mine.get("created_at"),
+        "seconds": mine.get("seconds"),
+        "passage": PASSAGE,
+    }
+
+
+@api.get("/my-voice/audio")
+def my_voice_audio(request: HttpRequest) -> FileResponse:
+    org = _org(request)
+    mine = org.my_voice or {}
+    if not mine.get("handle"):
+        raise ApiError(404, "not_found", "no recorded voice")
+    engine = services.engine_for(org)
+    path = engine.store.path(engine.store.resolve(mine["handle"]).hash)
+    return FileResponse(path.open("rb"), content_type="audio/mpeg")
+
+
+@api.post("/my-voice")
+def put_my_voice(
+    request: HttpRequest,
+    file: File[UploadedFile],
+    consent: Form[bool] = False,
+    read_passage: Form[bool] = True,
+) -> dict[str, Any]:
+    """Save a recording of the user's own voice (theirs, with their consent) as the reference
+    for `my_voice`. It is cleaned up in the sandbox: sound only, at most 30 s, as MP3."""
+    org = _org(request)
+    if not consent:
+        raise ApiError(422, "consent_needed", "confirm that this is your own voice")
+    engine = services.engine_for(org)
+    with tempfile.TemporaryDirectory(dir=engine.store.tmp) as tmp:
+        target = Path(tmp) / "voice"
+        written = 0
+        with target.open("wb") as out:
+            for chunk in file.chunks():
+                written += len(chunk)
+                if written > 25 << 20:
+                    raise ApiError(413, "too_large", "keep the recording under 30 seconds")
+                out.write(chunk)
+        if written == 0:
+            raise ApiError(400, "empty_file", "the recording is empty")
+        info = engine.store.put_file(target)
+    if info.media not in (MediaType.AUDIO, MediaType.VIDEO):
+        raise ApiError(415, "unsupported_type", "that is not a sound recording")
+    meta = engine.probe(info)
+    seconds = float(meta.get("duration") or 0.0)
+    if "error" in meta or not meta.get("audio"):
+        raise ApiError(415, "unreadable_media", "that recording has no sound we can read")
+    if seconds < MY_VOICE_SECONDS[0]:
+        raise ApiError(422, "too_short", "record at least 5 seconds (read the whole passage)")
+    end = min(seconds, MY_VOICE_SECONDS[1])
+    steps: list[dict[str, Any]] = []
+    if info.media is MediaType.VIDEO:
+        steps.append({"id": "a", "op": "audio.extract", "args": {}})
+    steps += [
+        {"id": "t", "op": "audio.trim", "args": {"start": 0, "end": round(end - 0.01, 2)}},
+        {"id": "out", "op": "export", "args": {"preset": "podcast_mp3"}},
+    ]
+    prev = "v"
+    for step in steps:
+        step["in"], prev = prev, step["id"]
+    try:
+        result = engine.run(
+            {"version": 1, "inputs": {"v": info.handle}, "steps": steps, "outputs": ["out"]}
+        )
+    except Exception:
+        raise ApiError(422, "unreadable_media", "that recording could not be read") from None
+    org.my_voice = {
+        "handle": result.outputs["out"].handle,
+        "text": PASSAGE if read_passage else "",
+        "seconds": round(end, 1),
+        "created_at": timezone.now().isoformat(),
+    }
+    org.save(update_fields=["my_voice"])
+    return get_my_voice(request)
+
+
+@api.delete("/my-voice")
+def delete_my_voice(request: HttpRequest) -> dict[str, Any]:
+    org = _org(request)
+    mine = org.my_voice or {}
+    if mine.get("handle"):
+        engine = services.engine_for(org)
+        with contextlib.suppress(Exception):  # already gone is fine
+            engine.store.path(engine.store.resolve(mine["handle"]).hash).unlink(missing_ok=True)
+    org.my_voice = {}
+    org.save(update_fields=["my_voice"])
+    return {"recorded": False}
 
 
 @api.get("/conversations")
@@ -350,7 +456,9 @@ def create_job(request: HttpRequest, body: JobIn) -> Status[dict[str, Any]]:
         if not parent.finished:
             raise ApiError(409, "parent_running", "wait for that job to finish, then refine it")
     voice = (body.voice or "").strip()
-    if voice and voice not in VOICES:
+    if voice == MY_VOICE and not (org.my_voice or {}).get("handle"):
+        raise ApiError(422, "bad_request", "record your voice in Settings first")
+    if voice and voice not in VOICES and voice != MY_VOICE:
         raise ApiError(422, "bad_request", f"unknown voice {voice!r}")
     if not voice and parent is not None:
         voice = parent.voice  # a chat keeps its voice

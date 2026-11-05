@@ -9,6 +9,7 @@ under the picture.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -49,6 +50,14 @@ BUILT_IN = ("serena", "vivian", "ryan", "eric", "dylan", "aiden", "uncle_fu")
 VOICES: dict[str, str] = {k: label for k, (label, _) in DESIGNED.items()}
 DEFAULT_VOICE = "american_woman"
 SEED = 7  # one seed for every sentence: the designed voice stays the same person
+MY_VOICE = "my_voice"  # the user's own recorded voice (qwen3-tts voice cloning)
+# What the user reads aloud to record their voice: about 15 s, varied sounds. Sent with the
+# recording as its transcript, which helps the cloned voice match.
+PASSAGE = (
+    "Hi, this is my voice. I'm recording a short sample so my videos can sound like me. "
+    "The quick brown fox jumps over the lazy dog, and on a bright Sunday morning we all "
+    "went to the market together. Thanks for listening!"
+)
 MAX_CHARS = 4000  # per make_voiceover call; about 4-5 minutes of speech
 CHUNK_CHARS = 600  # per TTS request, split at sentence ends
 
@@ -73,10 +82,30 @@ class VultrVoice:
     ) -> None:
         self.url = base_url.rstrip("/") + "/audio/speech"
         self.api_key, self.model, self.timeout = api_key, model, timeout
+        self.reference: tuple[bytes, str] | None = None  # the user's voice: mp3, its words
+
+    def with_reference(self, mp3: bytes, transcript: str) -> VultrVoice:
+        """The same service, able to speak as `my_voice` (cloned from this recording)."""
+        clone = VultrVoice(self.url.removesuffix("/audio/speech"), self.api_key, self.model)
+        clone.timeout, clone.reference = self.timeout, (mp3, transcript)
+        return clone
 
     def speak(self, text: str, voice: str) -> bytes:
         fields: dict[str, object] = {"voice": voice}
-        if voice in DESIGNED:
+        if voice == MY_VOICE:
+            if self.reference is None:
+                raise VoiceError("no recorded voice: the user can record one in Settings")
+            mp3, words = self.reference
+            refs: list[dict[str, object]] = [
+                {
+                    "type": "input_audio",
+                    "input_audio": {"data": base64.b64encode(mp3).decode(), "format": "mp3"},
+                }
+            ]
+            if words:
+                refs.append({"type": "text", "text": words})
+            fields = {"voice": "clone", "input_references": refs, "language": "English"}
+        elif voice in DESIGNED:
             fields = {
                 "voice": "design",
                 "instructions": DESIGNED[voice][1],
