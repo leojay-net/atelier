@@ -18,7 +18,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.http import FileResponse, HttpRequest, HttpResponse
+from django.http import FileResponse, HttpRequest, HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from ninja import Field, File, Form, NinjaAPI, Schema, Status
 from ninja.files import UploadedFile
@@ -383,14 +383,54 @@ _INLINE = {
 }
 
 
+_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def _ranged(path: Path, kind: str, header: str) -> HttpResponse | None:
+    """A 206 for `Range: bytes=a-b` (one range), streamed from the file; None to send it all.
+    Browsers need this to seek in a video or audio file (the editor's playhead, the player)."""
+    match = _RANGE.match(header.strip())
+    if not match or match.groups() == ("", ""):
+        return None
+    size = path.stat().st_size
+    first, last = match.groups()
+    if first == "":  # the last N bytes
+        start, end = max(0, size - int(last)), size - 1
+    else:
+        start, end = int(first), min(size - 1, int(last)) if last else size - 1
+    if start >= size or start > end:
+        response = HttpResponse(status=416)
+        response["Content-Range"] = f"bytes */{size}"
+        return response
+
+    def chunks() -> Any:
+        with path.open("rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                data = f.read(min(left, 1 << 20))
+                if not data:
+                    break
+                left -= len(data)
+                yield data
+
+    response = StreamingHttpResponse(chunks(), status=206, content_type=kind)
+    response["Content-Range"] = f"bytes {start}-{end}/{size}"
+    response["Content-Length"] = str(end - start + 1)
+    return response
+
+
 @api.get("/assets/{handle}/content")
-def asset_content(request: HttpRequest, handle: str) -> FileResponse:
+def asset_content(request: HttpRequest, handle: str) -> HttpResponse:
     asset = _asset(request, handle)
     engine = services.engine_for(_org(request))
     path = engine.store.path(asset.hash)
     kind = mimetypes.guess_type(f"x{asset.ext}")[0] or "application/octet-stream"
     inline = kind in _INLINE
-    response = FileResponse(path.open("rb"), content_type=kind)
+    response: HttpResponse = _ranged(path, kind, request.headers.get("Range", "")) or FileResponse(
+        path.open("rb"), content_type=kind
+    )  # type: ignore[assignment]
+    response["Accept-Ranges"] = "bytes"
     disposition = "inline" if inline else "attachment"
     response["Content-Disposition"] = f'{disposition}; filename="{asset.filename}"'
     response["X-Content-Type-Options"] = "nosniff"

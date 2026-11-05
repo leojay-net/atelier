@@ -52,10 +52,10 @@ const TABS: { key: Tab; label: string; icon: typeof Scissors }[] = [
   { key: "music", label: "Music", icon: Music },
   { key: "effects", label: "Sound effects", icon: AudioLines },
 ];
-const ASPECT: Record<Exclude<Shape, "original">, string> = {
-  portrait: "9 / 16",
-  square: "1 / 1",
-  landscape: "16 / 9",
+const RATIO: Record<Exclude<Shape, "original">, number> = {
+  portrait: 9 / 16,
+  square: 1,
+  landscape: 16 / 9,
 };
 const TOP: Record<Position, string> = {
   top: "6%",
@@ -113,6 +113,18 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
   const [uploadFor, setUploadFor] = useState<"voice" | "music" | null>(null);
   const [making, setMaking] = useState<"" | "voice" | "music">("");
   const audio = useRef<PreviewAudio | null>(null);
+  // the preview frame is fitted into the space it has, keeping the video's (or chosen) shape
+  const stage = useRef<HTMLDivElement>(null);
+  const [area, setArea] = useState<[number, number]>([0, 0]);
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const watch = new ResizeObserver(([entry]) => {
+      if (entry) setArea([entry.contentRect.width, entry.contentRect.height]);
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -386,8 +398,12 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     return (
       <p className="p-8 text-fg-secondary">Pick a video to edit from a chat.</p>
     );
-  const boxAspect =
-    shape === "original" ? `${natural[0]} / ${natural[1]}` : ASPECT[shape];
+  const ratio =
+    shape === "original" ? natural[0] / natural[1] : RATIO[shape];
+  const fit: [number, number] =
+    area[0] / Math.max(1, area[1]) > ratio
+      ? [area[1] * ratio, area[1]]
+      : [area[0], area[0] / ratio];
   const shownTexts = texts.filter((t) => now >= t.start && now < t.end);
   const pct = (t: number) => (duration ? `${(t / duration) * 100}%` : "0%");
 
@@ -916,14 +932,11 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
 
         {/* preview + timeline */}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-black p-4">
+          <div className="flex min-h-0 flex-1 rounded-xl bg-black p-4">
+            <div ref={stage} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
             <div
-              className="relative max-h-full overflow-hidden rounded-md"
-              style={{
-                aspectRatio: boxAspect,
-                height: "100%",
-                maxWidth: "100%",
-              }}
+              className="relative overflow-hidden rounded-md"
+              style={{ width: fit[0], height: fit[1], containerType: "size" }}
             >
               <video
                 ref={video}
@@ -961,6 +974,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                   {t.text}
                 </p>
               ))}
+            </div>
             </div>
           </div>
 
