@@ -231,13 +231,68 @@ class SlideshowParams(Params):
     fade: Timecode = Field(
         0.0, ge=0, le=5, description="crossfade between pictures in seconds; 0 is a cut"
     )
+    motion: Literal["auto", "none", "push_in", "push_out", "pan_left", "pan_right"] = Field(
+        "auto",
+        description="camera move on each picture: auto varies push-ins and pans; none is still",
+    )
+    durations: list[float] = Field(
+        default_factory=list,
+        description="seconds per picture (overrides `seconds`), e.g. whole beats of the music",
+    )
+
+
+# Camera moves: (zoom from, zoom to, focus x from, to, focus y from, to). Focus is where the
+# crop window sits (0 left/top … 1 right/bottom); slightly above center keeps faces in frame.
+MOVES: dict[str, tuple[float, float, float, float, float, float]] = {
+    "push_in": (1.0, 1.12, 0.5, 0.5, 0.42, 0.42),
+    "pan_right": (1.1, 1.1, 0.0, 1.0, 0.45, 0.45),
+    "push_out": (1.12, 1.0, 0.5, 0.5, 0.42, 0.42),
+    "pan_left": (1.1, 1.1, 1.0, 0.0, 0.45, 0.45),
+    "drift_up": (1.06, 1.12, 0.5, 0.5, 0.62, 0.32),
+}
+AUTO_MOVES = ("push_in", "pan_right", "push_out", "pan_left", "drift_up")
+OVERSAMPLE = 2  # the picture is prepared at 2x the frame, so slow moves glide (sub-pixel crops)
+
+
+def _ease(frames: int) -> str:
+    """Smoothstep progress 0 → 1 over `frames` output frames, as an ffmpeg expression."""
+    p = f"min(on/{max(1, frames - 1)},1)"
+    return f"({p}*{p}*(3-2*{p}))"
+
+
+def _move(g: Graph, v: str, move: str, seconds: float, size: tuple[int, int], fps: float) -> str:
+    z0, z1, x0, x1, y0, y1 = MOVES[move]
+    frames = max(1, round(seconds * fps))
+    e = _ease(frames)
+    (v,) = g.add(
+        "zoompan",
+        {
+            "z": f"{z0}+({z1 - z0})*{e}",
+            "x": f"(iw-iw/zoom)*({x0}+({x1 - x0})*{e})",
+            "y": f"(ih-ih/zoom)*({y0}+({y1 - y0})*{e})",
+            "d": frames,
+            "s": f"{size[0]}x{size[1]}",
+            "fps": num(fps),
+        },
+        ins=[v],
+        prefix="v",
+    )
+    (v,) = g.add("setsar", {"sar": 1}, ins=[v], prefix="v")
+    (v,) = g.add("setpts", {"expr": "PTS-STARTPTS"}, ins=[v], prefix="v")
+    (v,) = g.add("format", {"pix_fmts": "yuv420p"}, ins=[v], prefix="v")
+    return v
 
 
 def _slides_ok(p: SlideshowParams, n: int) -> str | None:
+    if p.durations and len(p.durations) != n:
+        return f"durations has {len(p.durations)} values for {n} pictures"
+    if p.durations and min(p.durations) < 0.5:
+        return "every picture needs at least 0.5 seconds"
+    shortest = min(p.durations) if p.durations else p.seconds
+    if p.fade > 0 and p.fade * 2 >= shortest:
+        return f"fade ({p.fade:g}s) must be under half of the shortest picture ({shortest:g}s)"
     if n > MAX_SLIDES:
         return f"video.slideshow takes at most {MAX_SLIDES} pictures, got {n}"
-    if p.fade > 0 and p.fade * 2 >= p.seconds:
-        return f"fade ({p.fade:g}s) must be less than half of seconds ({p.seconds:g}s)"
     return None
 
 
@@ -249,7 +304,7 @@ def _frame_size(shape: str, short: int) -> tuple[int, int]:
 
 @video_op(
     name="video.slideshow",
-    version="1.1.0",
+    version="1.2.0",
     params=SlideshowParams,
     inputs=(MediaType.IMAGE, MediaType.IMAGE),
     variadic=True,
@@ -257,19 +312,31 @@ def _frame_size(shape: str, short: int) -> tuple[int, int]:
     description="turn pictures into a video, each shown for a few seconds (2 to 40)",
 )
 def slideshow(g: Graph, p: SlideshowParams) -> None:
-    """Show the pictures in the order given, `seconds` each, in a frame of the chosen shape;
-    pictures of another shape are fitted (black bars) or filled (cropped). The video has no
-    sound: add music with `video.soundtrack`."""
+    """Show the pictures in the order given, `seconds` each (or `durations`, one per picture,
+    e.g. whole beats of the music), in a frame of the chosen shape. Pictures of another shape
+    are shown whole over a blurred copy (`blur`), fitted with bars (`fit`) or cropped (`fill`).
+    `motion` gives every picture a slow, eased camera move (push in/out, pans); `auto` varies
+    them from picture to picture, `none` keeps them still. The video has no sound: add music
+    with `video.soundtrack`."""
     stills = [g.snapshot(), *(g.extra_stream(k) for k in range(g.extra_count))]
     size = _frame_size(p.shape, p.short_side)
+    durations = list(p.durations) or [p.seconds] * len(stills)
     pictures = []
-    for s in stills:
+    for k, (s, seconds) in enumerate(zip(stills, durations, strict=True)):
         assert s.origin is not None and s.video is not None
-        g.sources[s.origin].opts = (
-            "-loop", "1", "-framerate", str(p.fps), "-t", num(p.seconds), "-f", "image2",
-        )  # fmt: skip
-        pictures.append(_conform(g, s, p.mode, size, float(p.fps)))
-    g.duration = _join(g, pictures, [], [p.seconds] * len(stills), p.fade)
+        if p.motion == "none":
+            g.sources[s.origin].opts = (
+                "-loop", "1", "-framerate", str(p.fps), "-t", num(seconds), "-f", "image2",
+            )  # fmt: skip
+            pictures.append(_conform(g, s, p.mode, size, float(p.fps)))
+            continue
+        # one frame in, prepared at OVERSAMPLE x the frame; zoompan makes the moving shot
+        g.sources[s.origin].opts = ("-f", "image2")
+        big = (size[0] * OVERSAMPLE, size[1] * OVERSAMPLE)
+        v = _conform(g, s, p.mode, big, float(p.fps))
+        move = AUTO_MOVES[k % len(AUTO_MOVES)] if p.motion == "auto" else p.motion
+        pictures.append(_move(g, v, move, seconds, size, float(p.fps)))
+    g.duration = _join(g, pictures, [], durations, p.fade)
     g.width, g.height, g.fps = size[0], size[1], float(p.fps)
     g.sample_rate = g.channels = 0
 

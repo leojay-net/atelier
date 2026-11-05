@@ -109,3 +109,81 @@ def chunks(text: str, limit: int = CHUNK_CHARS) -> list[str]:
     if current:
         out.append(current)
     return [c for c in out if c]
+
+
+# -- word-timed captions --------------------------------------------------------------------
+# The voice is spoken one sentence at a time, so each sentence's start and length are exact;
+# inside a sentence, words get time in proportion to their length (plus a beat after
+# punctuation). That is close enough to read as in sync, with no speech recognition needed.
+
+SPEECH_SHARE = 0.92  # the end of each spoken sentence is a short breath, not a word
+MAX_CUE_WORDS = 3
+MAX_CUE_CHARS = 18
+
+
+def sentences(text: str) -> list[str]:
+    """Sentences to speak one by one: very short ones join the next, very long ones split."""
+    raw = re.split(r"(?<=[.!?…])\s+", " ".join(text.split()))
+    out: list[str] = []
+    carry = ""
+    for s in raw:
+        s = f"{carry} {s}".strip()
+        if len(s) < 25 and s is not raw[-1]:
+            carry = s
+            continue
+        carry = ""
+        out.extend(chunks(s, CHUNK_CHARS))
+    if carry:
+        out.append(carry)
+    return [s for s in out if s]
+
+
+def word_times(spoken: list[str], durations: list[float]) -> list[tuple[float, float, str]]:
+    """(start, end, word) for every word, from each sentence's measured length."""
+    timed: list[tuple[float, float, str]] = []
+    t0 = 0.0
+    for sentence, length in zip(spoken, durations, strict=True):
+        words = sentence.split()
+        weights = [len(w) + 1 + (3 if w[-1] in ",;:.!?…" else 0) for w in words]
+        total = sum(weights) or 1
+        t = t0
+        for w, weight in zip(words, weights, strict=True):
+            span = length * SPEECH_SHARE * weight / total
+            timed.append((t, t + span, w))
+            t += span
+        t0 += length
+    return timed
+
+
+def caption_cues(words: list[tuple[float, float, str]]) -> list[tuple[float, float, str]]:
+    """Groups of 1-3 words (a new group after punctuation), each shown until the next."""
+    cues: list[tuple[float, float, str]] = []
+    group: list[tuple[float, float, str]] = []
+    for item in words:
+        text = " ".join(w for _, _, w in [*group, item])
+        if group and (len(group) >= MAX_CUE_WORDS or len(text) > MAX_CUE_CHARS):
+            cues.append((group[0][0], group[-1][1], " ".join(w for _, _, w in group)))
+            group = []
+        group.append(item)
+        if item[2][-1] in ",;:.!?…":
+            cues.append((group[0][0], group[-1][1], " ".join(w for _, _, w in group)))
+            group = []
+    if group:
+        cues.append((group[0][0], group[-1][1], " ".join(w for _, _, w in group)))
+    # each cue stays up until the next one starts (no flicker between words)
+    return [
+        (start, cues[i + 1][0] if i + 1 < len(cues) and cues[i + 1][0] - end < 0.6 else end, text)
+        for i, (start, end, text) in enumerate(cues)
+    ]
+
+
+def srt(cues: list[tuple[float, float, str]]) -> str:
+    def stamp(t: float) -> str:
+        ms = round(t * 1000)
+        return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+    blocks = [
+        f"{i}\n{stamp(a)} --> {stamp(b)}\n{text.rstrip(',;:')}"
+        for i, (a, b, text) in enumerate(cues, 1)
+    ]
+    return "\n\n".join(blocks) + "\n"

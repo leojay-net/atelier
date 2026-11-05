@@ -19,13 +19,25 @@ import json
 import re
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from atelier.agent.budget import Budget
+from atelier.agent.music import MusicError, MusicService
 from atelier.agent.pictures import PictureError, PictureService
-from atelier.agent.voice import DEFAULT_VOICE, MAX_CHARS, VOICES, VoiceError, VoiceService, chunks
+from atelier.agent.voice import (
+    DEFAULT_VOICE,
+    MAX_CHARS,
+    VOICES,
+    VoiceError,
+    VoiceService,
+    caption_cues,
+    sentences,
+    srt,
+    word_times,
+)
 from atelier.av.binaries import find
 from atelier.engine.engine import Engine, format_plan, format_result
 from atelier.engine.runner import JobResult, StepFailed
@@ -40,6 +52,7 @@ MAX_NAMES_PER_CALL = 12
 MAX_VOICEOVERS = 4  # per job
 MAX_FOUND = 12  # pictures found per job
 MAX_MADE = 8  # pictures generated per job
+MAX_MUSIC = 2  # tracks composed per job
 
 PREVIEW_KINDS = {"thumb": "thumb", "crop": "crop", "compare": "compare", "contact_sheet": "sheet"}
 MEDIA_TYPES = {
@@ -118,9 +131,28 @@ TOOLS: list[dict[str, Any]] = sorted(
             strict=True,
         ),
         _tool(
+            "make_music",
+            "Compose an original instrumental track (royalty-free, made to length) and get it "
+            "as an audio asset with its exact duration and beat length. style: genre, mood, "
+            'instruments and energy, e.g. "warm upbeat lofi pop, soft piano, light drums" or '
+            '"cinematic inspiring build, strings and piano". seconds: the video\'s length (10 '
+            "to 180). bpm: 70-90 calm, 95-115 upbeat, 120-130 energetic. Cut on the beat: make "
+            "shot lengths whole numbers of beats (slideshow durations).",
+            {
+                "properties": {
+                    "style": {"type": "string"},
+                    "seconds": {"type": "integer"},
+                    "bpm": {"type": "integer"},
+                },
+                "required": ["style", "seconds", "bpm"],
+            },
+            strict=True,
+        ),
+        _tool(
             "make_voiceover",
             "Speak a script aloud with a natural, human-sounding AI voice and get it back as a "
-            "new audio asset (handle and exact duration). Write the narration yourself when the "
+            "new audio asset (handle and exact duration), plus word-timed captions (an SRT text "
+            "asset) to burn in with video.captions. Write the narration yourself when the "
             "user asks for a voiceover without giving the words: plain, conversational "
             "sentences, about 2.5 words per second of video. Then put it on the video with "
             "video.soundtrack (mode replace, loop false) or under existing sound with audio.mix. "
@@ -202,6 +234,7 @@ class Toolbox:
     budget: Budget
     voice: VoiceService | None = None
     pictures: PictureService | None = None
+    music: MusicService | None = None
     attempts: list[RunAttempt] = field(default_factory=list)
     calls: list[str] = field(default_factory=list)
     # assets the tools made or fetched: (handle, filename), and credits for found photos
@@ -233,6 +266,7 @@ class Toolbox:
             "find_images": self._find_images,
             "inspect_media": self._inspect_media,
             "make_image": self._make_image,
+            "make_music": self._make_music,
             "make_voiceover": self._make_voiceover,
             "preview": self._preview,
             "run_pipeline": self._run_pipeline,
@@ -373,32 +407,45 @@ class Toolbox:
                 "service configured); tell the user instead",
                 is_error=True,
             )
-        if sum(1 for _, n in self.generated if n.endswith(".mp3")) >= MAX_VOICEOVERS:
+        if sum(1 for _, n in self.generated if n == "voiceover.mp3") >= MAX_VOICEOVERS:
             return ToolOutcome(
                 f"make_voiceover: at most {MAX_VOICEOVERS} voiceovers per request; reuse one",
                 is_error=True,
             )
         try:
-            info = self._speak(text, voice)
+            info, captions = self._speak(text, voice)
         except (VoiceError, subprocess.CalledProcessError, OSError) as e:
             return ToolOutcome(f"make_voiceover: {e}", is_error=True)
         self.generated.append((info.handle, "voiceover.mp3"))
+        self.generated.append((captions.handle, "captions.srt"))
         duration = self.engine.probe(info).get("duration") or 0.0
         return ToolOutcome(
             f"{info.handle} · audio · voiceover {duration:.2f}s · voice {voice} · "
-            f"{len(text.split())} words"
+            f"{len(text.split())} words\n{captions.handle} · text · word-timed captions for it "
+            "(burn in with video.captions, style bold_pop, starting where the voice starts)"
         )
 
-    def _speak(self, text: str, voice: str) -> Any:
-        """One MP3 from the whole script: each chunk spoken, then joined, brought to -16 LUFS
-        and re-encoded once, so the file has a single clean header and an exact duration."""
+    def _speak(self, text: str, voice: str) -> tuple[Any, Any]:
+        """The voiceover and its captions. Each sentence is spoken on its own (four at a time),
+        which gives every sentence's exact length for word-timed captions; the parts are joined,
+        brought to -16 LUFS and re-encoded once (one clean header, an exact duration)."""
         assert self.voice is not None
+        voice_service = self.voice
         work = Path(tempfile.mkdtemp(prefix="voice-", dir=self.engine.store.tmp))
-        parts = []
-        for i, chunk in enumerate(chunks(text)):
+        spoken = sentences(text)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            audio = list(pool.map(lambda s: voice_service.speak(s, voice), spoken))
+        parts, lengths = [], []
+        for i, data in enumerate(audio):
             part = work / f"part{i:03d}.mp3"
-            part.write_bytes(self.voice.speak(chunk, voice))
+            part.write_bytes(data)
             parts.append(part)
+            probe = subprocess.run(
+                [find("ffprobe"), "-v", "error", "-show_entries", "format=duration",
+                 "-of", "csv=p=0", str(part)],
+                capture_output=True, text=True, timeout=60,
+            )  # fmt: skip
+            lengths.append(float(probe.stdout.strip() or 0.0))
         listing = work / "parts.txt"
         listing.write_text("".join(f"file '{p.name}'\n" for p in parts), encoding="utf-8")
         out = work / "voiceover.mp3"
@@ -417,10 +464,41 @@ class Toolbox:
             timeout=300,
         )  # fmt: skip
         info = self.engine.store.put_file(out, media=MediaType.AUDIO, ext=".mp3", move=True)
+        cues = srt(caption_cues(word_times(spoken, lengths)))
+        captions = self.engine.store.put_bytes(cues.encode(), media=MediaType.TEXT, ext=".srt")
         for p in [*parts, listing]:
             p.unlink(missing_ok=True)
         work.rmdir()
-        return info
+        return info, captions
+
+    def _make_music(self, args: dict[str, Any]) -> ToolOutcome:
+        style = " ".join(str(args.get("style") or "").split())[:600]
+        seconds = args.get("seconds") if isinstance(args.get("seconds"), int) else 30
+        bpm = args.get("bpm") if isinstance(args.get("bpm"), int) else 100
+        if not style:
+            return ToolOutcome("make_music: style must not be empty", is_error=True)
+        if not 10 <= seconds <= 180:
+            return ToolOutcome("make_music: seconds must be 10 to 180", is_error=True)
+        if not 60 <= bpm <= 160:
+            return ToolOutcome("make_music: bpm must be 60 to 160", is_error=True)
+        if self.music is None:
+            return ToolOutcome("make_music: not available on this server", is_error=True)
+        if sum(1 for _, n in self.generated if n == "music.mp3") >= MAX_MUSIC:
+            return ToolOutcome(f"make_music: at most {MAX_MUSIC} tracks per request", is_error=True)
+        seed = int.from_bytes(style.encode()[:4].ljust(4, b"\0"), "big") % 100000
+        try:
+            data = self.music.compose(style, seconds, bpm, seed)
+            info = self.engine.store.put_bytes(data, media=MediaType.AUDIO, ext=".mp3")
+        except (MusicError, OSError) as e:
+            return ToolOutcome(f"make_music: {e}", is_error=True)
+        self.generated.append((info.handle, "music.mp3"))
+        duration = self.engine.probe(info).get("duration") or float(seconds)
+        beat = 60.0 / bpm
+        return ToolOutcome(
+            f"{info.handle} · audio · original music {duration:.2f}s · {bpm} bpm · one beat "
+            f"{beat:.3f}s, a bar of 4 beats {4 * beat:.3f}s. Make shot lengths whole beats "
+            "(e.g. 4 beats), put it under the voice with audio.mix (length music)."
+        )
 
     def _preview(self, args: dict[str, Any]) -> ToolOutcome:
         kind, handles = args.get("kind"), _strings(args.get("assets"))

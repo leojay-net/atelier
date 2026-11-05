@@ -5,6 +5,17 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Production quality, day 1 (2026-11-05, docs/14)
+- `video.slideshow` 1.1.0 → 1.2.0: `motion` (default `auto`): every picture gets a slow, eased
+  camera move (push in/out, pans, drift), prepared at 2x so it glides; `none` keeps stills.
+  `durations` sets each shot's length (whole beats of the music).
+- New agent tool `make_music` (Vultr ACE-Step 1.5, `POST /v1/music`): original instrumental
+  music to length and tempo; returns the beat length so cuts land on the beat.
+- `make_voiceover` speaks sentence by sentence and returns word-timed captions (SRT, 1-3 words
+  per cue) to burn in with `video.captions`.
+- Prompt: a production playbook (hook, shot list, 1.5-3 s pacing for reels, music under every
+  video, captions under every voice, scripts written for the ear).
+
 ### Library, chats, presentations (2026-11-05)
 - `image.text`, `video.text`, `video.captions`, `video.lower_third` 1.0.1 → 1.0.2: leading
   indentation is kept (tabs as 4 spaces), so code on a slide stays valid Python.

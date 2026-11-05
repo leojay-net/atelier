@@ -20,6 +20,7 @@ from typing import Any
 from atelier.agent.budget import Budget
 from atelier.agent.client import MessagesClient, MissingCredentials
 from atelier.agent.config import AgentConfig
+from atelier.agent.music import MusicService
 from atelier.agent.pictures import PictureService
 from atelier.agent.plan_cache import PlanCache, plan_key
 from atelier.agent.prompt import FINAL_SCHEMA, catalogue_version, system_blocks
@@ -78,6 +79,7 @@ def run_job(
     plan_cache: PlanCache | None = None,
     voice: VoiceService | None = None,
     pictures: PictureService | None = None,
+    music: MusicService | None = None,
 ) -> AgentResult:
     """`client` (today's Anthropic-shaped `MessagesClient`) or `adapter` (any `ModelAdapter`,
     `providers/`), not both. `client` stays for every existing caller: it is wrapped in
@@ -101,7 +103,7 @@ def run_job(
     try:
         result = _run(
             job, infos, system, version, record, engine, adapter, config, plan_cache,
-            voice, pictures,
+            voice, pictures, music,
         )  # fmt: skip
         record.status = result.status
         result.record = record
@@ -127,6 +129,7 @@ def _run(
     plan_cache: PlanCache | None,
     voice: VoiceService | None = None,
     pictures: PictureService | None = None,
+    music: MusicService | None = None,
 ) -> AgentResult:
     key = plan_key(job.prompt, (i.hash for i in infos), version, config.model)
     if plan_cache is not None and (hit := _replay(plan_cache, key, engine)) is not None:
@@ -134,7 +137,7 @@ def _run(
         return hit
 
     budget = Budget(config.limits)
-    toolbox = Toolbox(engine, budget, voice=voice, pictures=pictures)
+    toolbox = Toolbox(engine, budget, voice=voice, pictures=pictures, music=music)
     history = adapter.initial_history(_user_text(job, infos, engine))
     max_tokens, retried = config.max_tokens, False
 
@@ -290,6 +293,9 @@ def _call_detail(call: Any) -> str:
         return ""
     if call.name == "find_images":
         return f"“{str(args.get('query', ''))[:80]}” × {args.get('count', '')}"
+    if call.name == "make_music":
+        style = str(args.get("style", ""))[:100]
+        return f"{args.get('bpm', '')} bpm, {args.get('seconds', '')}s: “{style}”"
     if call.name == "make_image":
         text = " ".join(str(args.get("prompt", "")).split())
         return f"“{text[:140]}{'…' if len(text) > 140 else ''}”"
