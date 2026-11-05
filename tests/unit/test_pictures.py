@@ -237,3 +237,25 @@ def test_commons_results_keep_reusable_licenses_and_put_recent_photos_first(
     # old, then undated (on Commons usually a scan of an old artwork)
     assert found[0].credit == '"Photo 3" by Artist 3, CC BY 2.0 (via Wikimedia Commons)'
     assert found[0].year == 2024 and found[0].url == "https://upload.example/3.jpg"
+
+
+def test_generation_waits_out_a_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Live: three jobs at once got 429s from the image service and lost their pictures."""
+    calls, waits = [], []
+
+    def fake_get(req: Any, timeout: float) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) < 3:
+            raise PictureError("the picture service answered 429: rate limit")
+        return {"data": [{"b64_json": "aGVsbG8="}]}
+
+    monkeypatch.setattr(pictures, "_get_json", fake_get)
+    monkeypatch.setattr(pictures.time, "sleep", waits.append)
+    vultr = pictures.OpenverseAndVultr("https://v/v1", "k", "m")
+    assert vultr.generate("a cat", "square") == b"hello" and waits == [4, 8]
+    calls.clear()
+    monkeypatch.setattr(
+        pictures, "_get_json", lambda req, t: (_ for _ in ()).throw(PictureError("answered 500"))
+    )
+    with pytest.raises(PictureError, match="500"):  # other errors are not retried
+        vultr.generate("a cat", "square")

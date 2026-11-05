@@ -67,9 +67,7 @@ def test_tool_result_round_trip(engine: Engine, photo: str) -> None:
     contents = second["contents"]
     assistant = contents[-2]
     call = assistant.parts[0].function_call
-    assert call.name == "run_pipeline" and json.loads(json.dumps(call.args))["spec"] == good(
-        photo
-    )
+    assert call.name == "run_pipeline" and json.loads(json.dumps(call.args))["spec"] == good(photo)
     reply = contents[-1]
     assert reply.role == "user"
     response = reply.parts[0].function_response

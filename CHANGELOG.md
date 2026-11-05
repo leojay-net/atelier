@@ -5,6 +5,15 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Live fixes (2026-11-05, second live run)
+- `video.captions` 1.1.0 → 1.2.0: `position` default `auto`: `bottom` on landscape and square
+  (it sat on a tutorial slide's own text at `lower_safe`), `lower_safe` on portrait.
+- `video.sfx` accepts `time`/`sound` as names for `at`/`kind` (the AI wrote them; canonical
+  form unchanged, so no version bump). Errors inside list items now name the item's fields.
+- Step sandbox: `MALLOC_ARENA_MAX=2`, so fused renders stop hitting the 4 GB address-space cap
+  through glibc's per-thread arenas (a 10-shot portrait reel with captions failed in export).
+- `make_image` waits and retries when the image service rate-limits (429).
+
 ### Production quality, day 2 (2026-11-05, docs/14)
 - `video.text`, `video.captions`, `video.lower_third` 1.0.2 → 1.1.0: `animate` (default `auto`):
   titles rise and fade in (and out), caption phrases pop in; animated layers are short looped

@@ -37,7 +37,12 @@ _ENV_PASSTHROUGH = (
     "PATH", "LANG", "LC_ALL", "LC_CTYPE", "PYTHONPATH", "SYSTEMROOT", "TMPDIR",
     "ATELIER_FFMPEG", "ATELIER_FFPROBE", "ATELIER_SOFFICE",
 )  # fmt: skip
-_ENV_FIXED = {"TZ": "UTC", "PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1"}
+# MALLOC_ARENA_MAX: glibc reserves a 64 MB arena per thread, and RLIMIT_AS counts reservations,
+# so a fused ffmpeg render (dozens of filter and x264 threads) hit the 4 GB cap with ~1 GB really
+# in use ("Cannot allocate memory" on a 10-shot portrait reel with captions, live 2026-11-05).
+_ENV_FIXED = {
+    "TZ": "UTC", "PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1", "MALLOC_ARENA_MAX": "2",
+}  # fmt: skip
 
 
 @dataclass(frozen=True)
