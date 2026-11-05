@@ -90,6 +90,14 @@ class VultrVoice:
         clone.timeout, clone.reference = self.timeout, (mp3, transcript)
         return clone
 
+    def speak_as(self, text: str, description: str) -> bytes:
+        """`text` in a voice described in words (an animated character's voice)."""
+        return self._post(
+            text,
+            {"voice": "design", "instructions": description[:500], "language": "English",
+             "seed": SEED},
+        )  # fmt: skip
+
     def speak(self, text: str, voice: str) -> bytes:
         fields: dict[str, object] = {"voice": voice}
         if voice == MY_VOICE:
@@ -112,6 +120,9 @@ class VultrVoice:
                 "language": "English",
                 "seed": SEED,
             }
+        return self._post(text, fields)
+
+    def _post(self, text: str, fields: dict[str, object]) -> bytes:
         body = json.dumps(
             {"model": self.model, "input": text, "response_format": "mp3", **fields}
         ).encode()

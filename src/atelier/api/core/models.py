@@ -183,3 +183,22 @@ class SavedRecipe(models.Model):
 
     class Meta:
         unique_together = (("org", "name"),)
+
+
+class Character(models.Model):
+    """A member of the user's animation cast: a character or a place, with its design picture
+    (the reference every animated scene is made from) and, for characters, a voice."""
+
+    KINDS = (("character", "character"), ("place", "place"))
+
+    org = models.ForeignKey(Org, on_delete=models.CASCADE, related_name="characters")
+    name = models.CharField(max_length=60)
+    kind = models.CharField(max_length=10, choices=KINDS, default="character")
+    look = models.TextField()
+    voice = models.CharField(max_length=400, blank=True)
+    image = models.CharField(max_length=80)  # the design picture's asset handle
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        indexes = [models.Index(fields=["org", "name"])]

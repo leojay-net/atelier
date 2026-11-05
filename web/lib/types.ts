@@ -247,3 +247,16 @@ export interface VoiceAccent {
   label: string;
   voices: VoiceChoice[];
 }
+
+export type CastKind = "character" | "place";
+
+export interface CastMember {
+  id: number;
+  name: string;
+  kind: CastKind;
+  look: string;
+  voice: string;
+  image: string;
+  created_at: string;
+  updated_at: string;
+}

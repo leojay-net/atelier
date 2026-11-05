@@ -17,7 +17,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from atelier.agent.animation import AnimationService
 from atelier.agent.budget import Budget
+from atelier.agent.cast import Cast
 from atelier.agent.client import MessagesClient, MissingCredentials
 from atelier.agent.config import AgentConfig
 from atelier.agent.music import MusicService
@@ -80,6 +82,8 @@ def run_job(
     voice: VoiceService | None = None,
     pictures: PictureService | None = None,
     music: MusicService | None = None,
+    animator: AnimationService | None = None,
+    cast: Cast | None = None,
 ) -> AgentResult:
     """`client` (today's Anthropic-shaped `MessagesClient`) or `adapter` (any `ModelAdapter`,
     `providers/`), not both. `client` stays for every existing caller: it is wrapped in
@@ -103,7 +107,7 @@ def run_job(
     try:
         result = _run(
             job, infos, system, version, record, engine, adapter, config, plan_cache,
-            voice, pictures, music,
+            voice, pictures, music, animator, cast,
         )  # fmt: skip
         record.status = result.status
         result.record = record
@@ -130,6 +134,8 @@ def _run(
     voice: VoiceService | None = None,
     pictures: PictureService | None = None,
     music: MusicService | None = None,
+    animator: AnimationService | None = None,
+    cast: Cast | None = None,
 ) -> AgentResult:
     key = plan_key(job.prompt, (i.hash for i in infos), version, config.model)
     if plan_cache is not None and (hit := _replay(plan_cache, key, engine)) is not None:
@@ -137,7 +143,9 @@ def _run(
         return hit
 
     budget = Budget(config.limits)
-    toolbox = Toolbox(engine, budget, voice=voice, pictures=pictures, music=music)
+    toolbox = Toolbox(
+        engine, budget, voice=voice, pictures=pictures, music=music, animator=animator, cast=cast
+    )
     history = adapter.initial_history(_user_text(job, infos, engine))
     max_tokens, retried = config.max_tokens, False
 

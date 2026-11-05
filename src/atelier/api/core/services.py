@@ -21,7 +21,8 @@ from django.db import transaction
 from django.db.models import Max, Sum
 from django.utils import timezone
 
-from atelier.api.core.models import Asset, Job, JobEvent, Org
+from atelier.agent.cast import CastMember
+from atelier.api.core.models import Asset, Character, Job, JobEvent, Org
 from atelier.engine.engine import Engine
 from atelier.engine.mirror import MirroredStore, ObjectBackend
 from atelier.engine.runner import JobResult, RunLimits
@@ -191,6 +192,10 @@ def delete_chat_files(org: Org, chain: list[Job]) -> int:
     for other in Job.objects.filter(org=org, chat_deleted=False).exclude(pk__in=ids):
         used |= {h.removeprefix("asset:") for h in [*output_handles(other), *(other.assets or [])]}
     mine = (org.my_voice or {}).get("handle", "").removeprefix("asset:")
+    used |= {  # the cast's design pictures outlive the chat that made them
+        h.removeprefix("asset:")
+        for h in Character.objects.filter(org=org).values_list("image", flat=True)
+    }
     doomed = list(  # an upload has no origin job: it is the user's own file, never deleted here
         Asset.objects.filter(org=org, hash__in=made - used - {mine}, origin_job__isnull=False)
     )
@@ -220,6 +225,10 @@ def thread_title(job: Job) -> str:
 
 def _extra_title(filename: str) -> str:
     stem = filename.rsplit(".", 1)[0]
+    if stem.startswith("character-"):
+        return "Character design: " + stem.removeprefix("character-").replace("-", " ")
+    if stem.startswith("scene-"):
+        return "Animated scene " + stem.removeprefix("scene-")
     if stem.startswith("voiceover"):
         return "AI voiceover"
     for prefix, label in (("made-", "AI picture"), ("found-", "Photo from the web")):
@@ -241,9 +250,8 @@ def library(org: Org, section: str, media: str, limit: int, offset: int) -> dict
     counts = {"created": 0, "uploaded": 0, "extras": 0}
     items: list[dict[str, Any]] = []
     for a in assets:
-        kind = (
-            "created" if a.hash in outputs else "uploaded" if a.origin_job_id is None else "extras"
-        )
+        made_here = a.origin_job_id is not None or a.filename.startswith("character-")
+        kind = "created" if a.hash in outputs else "extras" if made_here else "uploaded"
         counts[kind] += 1
         if kind != section:
             continue
@@ -438,3 +446,49 @@ def job_dict(job: Job, *, events: bool = False) -> dict[str, Any]:
     if events:
         out["events"] = [event_dict(e) for e in job.events.all()]
     return out
+
+
+# -- the animation cast -------------------------------------------------------------------------
+
+
+class DjangoCast:
+    """The agent's view of an organization's cast (agent/cast.py), stored as Character rows."""
+
+    def __init__(self, org: Org, job: Job | None = None) -> None:
+        self.org, self.job = org, job
+
+    def members(self) -> list[CastMember]:
+        return [
+            CastMember(c.name, c.kind, c.look, c.voice, c.image)  # type: ignore[arg-type]
+            for c in Character.objects.filter(org=self.org).order_by("created_at")
+        ]
+
+    def save(self, member: CastMember, filename: str) -> None:
+        save_character(self.org, member, filename, origin=self.job)
+
+
+def save_character(org: Org, member: CastMember, filename: str, origin: Job | None) -> Character:
+    """Add a cast member or redesign the one with the same name (any case)."""
+    info = engine_for(org).store.resolve(member.handle)
+    register_asset(org, info, filename, origin=origin)
+    found = Character.objects.filter(org=org, name__iexact=member.name).first()
+    now = timezone.now()
+    if found is None:
+        found = Character(org=org, created_at=now)
+    found.name, found.kind, found.look = member.name, member.kind, member.look
+    found.voice, found.image, found.updated_at = member.voice, member.handle, now
+    found.save()
+    return found
+
+
+def character_dict(c: Character) -> dict[str, Any]:
+    return {
+        "id": c.pk,
+        "name": c.name,
+        "kind": c.kind,
+        "look": c.look,
+        "voice": c.voice,
+        "image": c.image,
+        "created_at": c.created_at,
+        "updated_at": c.updated_at,
+    }

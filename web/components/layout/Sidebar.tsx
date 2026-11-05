@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BookMarked,
+  Drama,
   Library,
   ListChecks,
   LogOut,
@@ -26,6 +27,7 @@ export const NEW_CHAT_EVENT = "atelier:new-chat";
 export const CHATS_CHANGED_EVENT = "atelier:chats-changed";
 
 const NAV = [
+  { href: "/characters", label: "Characters", icon: Drama },
   { href: "/library", label: "Library", icon: Library },
   { href: "/jobs", label: "Activity", icon: ListChecks },
   { href: "/recipes", label: "Recipes", icon: BookMarked },
