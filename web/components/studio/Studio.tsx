@@ -9,6 +9,7 @@ import {
   Circle,
   Download,
   Loader2,
+  Mic,
   Paperclip,
   Plus,
   Presentation,
@@ -18,7 +19,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import type { Job, JobEvent, JobOutput, MediaType } from "@/lib/types";
+import type { Job, JobEvent, JobOutput, MediaType, VoiceAccent } from "@/lib/types";
 import { isTerminal } from "@/lib/types";
 import { useJobLive } from "@/hooks/useJobLive";
 import { useUpload, type UploadItem } from "@/hooks/useUpload";
@@ -444,8 +445,50 @@ function Attachment({ item, onRemove }: { item: UploadItem; onRemove: () => void
 
 // -- the studio --------------------------------------------------------------------------------
 
+
+/** The voiceover voice for this chat: an accent, as a woman's or a man's voice. "" lets the AI
+ * choose (it matches the request, else an American woman). Kept for the rest of the chat. */
+function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [accents, setAccents] = useState<VoiceAccent[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/proxy/voices")
+      .then((r) => (r.ok ? r.json() : { accents: [] }))
+      .then((d: { accents: VoiceAccent[] }) => alive && setAccents(d.accents))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!accents.length) return null;
+  return (
+    <label className="flex items-center gap-1.5 text-[12px] text-fg-secondary">
+      <Mic size={13} className="opacity-70" />
+      <span>Voice</span>
+      <select
+        aria-label="Voice for voiceovers"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-border bg-bg px-1.5 py-0.5 text-[12px] text-fg outline-none focus:border-accent"
+      >
+        <option value="">Let the AI choose</option>
+        {accents.map((a) => (
+          <optgroup key={a.id} label={a.label}>
+            {a.voices.map((v) => (
+              <option key={v.id} value={v.id}>
+                {a.label} {v.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function Studio({ initialThread }: { initialThread: Job[] }) {
   const [thread, setThread] = useState<Job[]>(initialThread);
+  const [voice, setVoice] = useState<string>(initialThread.at(-1)?.voice ?? "");
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -501,7 +544,12 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
       const res = await fetch("/api/proxy/jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, assets: ready, ...(last ? { parent: last.id } : {}) }),
+        body: JSON.stringify({
+          prompt,
+          assets: ready,
+          ...(last ? { parent: last.id } : {}),
+          ...(voice ? { voice } : {}),
+        }),
       });
       if (!res.ok) throw new Error((await readApiError(res)).message);
       const job: Job = await res.json();
@@ -521,6 +569,7 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
 
   function startOver() {
     setThread([]);
+    setVoice("");
     setEvents([]);
     setPicked(null);
     setText("");
@@ -682,6 +731,7 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
               {sending ? <Loader2 size={16} className="animate-spin" /> : <SendHorizonal size={16} />}
             </button>
           </div>
+          <VoicePicker value={voice} onChange={setVoice} />
           {uploading ? <p className="text-[11px] text-fg-tertiary">Uploading… you can send once it finishes.</p> : null}
         </div>
       </aside>

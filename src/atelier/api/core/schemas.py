@@ -22,6 +22,13 @@ class JobIn(Schema):
     recipe_id: int | None = None
     inputs: dict[str, str] = Field(default_factory=dict)  # recipe: input name → asset handle
     parent: str | None = None  # prompt only: the job this one follows up on ("refine this")
+    voice: str | None = Field(
+        None, max_length=40
+    )  # prompt only: voiceover voice, e.g. nigerian_man
+
+
+class ChatIn(Schema):
+    title: str = Field(min_length=1, max_length=120)
 
 
 class RecipeIn(Schema):

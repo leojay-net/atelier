@@ -19,12 +19,14 @@ from django.utils import timezone
 from ninja import File, NinjaAPI, Status
 from ninja.files import UploadedFile
 
+from atelier.agent.voice import ACCENTS, DEFAULT_VOICE, PEOPLE, VOICES
 from atelier.api.core import accounts, services
 from atelier.api.core.auth import ApiKeyAuth
 from atelier.api.core.models import Asset, Job, Org, SavedRecipe
 from atelier.api.core.queue import enqueue
 from atelier.api.core.schemas import (
     BrandKitIn,
+    ChatIn,
     JobIn,
     LoginIn,
     RecipeIn,
@@ -199,6 +201,35 @@ def library(
     return services.library(_org(request), section, media, limit, max(0, offset))
 
 
+@api.get("/voices")
+def voices(request: HttpRequest) -> dict[str, Any]:
+    """The voiceover voices a user can choose: an accent, each with a woman's and a man's."""
+    return {
+        "default": DEFAULT_VOICE,
+        "accents": [
+            {"id": a, "label": label, "voices": [{"id": f"{a}_{g}", "label": g} for g in PEOPLE]}
+            for a, (label, _) in ACCENTS.items()
+        ],
+    }
+
+
+@api.patch("/conversations/{job_id}")
+def rename_conversation(request: HttpRequest, job_id: str, body: ChatIn) -> dict[str, Any]:
+    """Name a chat (any job in it). The name wins over the AI's titles from then on."""
+    end = services.latest_in_thread(_job(request, job_id))
+    end.chat_title = " ".join(body.title.split())[:120]
+    end.save(update_fields=["chat_title"])
+    return {"id": str(end.id), "title": services.thread_title(end)}
+
+
+@api.delete("/conversations/{job_id}")
+def delete_conversation(request: HttpRequest, job_id: str) -> dict[str, Any]:
+    """Remove a chat from the list (every message in it). What it made stays in the Library."""
+    chain = services.thread_jobs(services.latest_in_thread(_job(request, job_id)))
+    Job.objects.filter(pk__in=[j.pk for j in chain]).update(chat_deleted=True)
+    return {"deleted": len(chain)}
+
+
 @api.get("/conversations")
 def conversations(request: HttpRequest, limit: int = 50) -> dict[str, Any]:
     """Recent chats, newest first, each by its latest job (open it at /studio/<id>)."""
@@ -318,9 +349,15 @@ def create_job(request: HttpRequest, body: JobIn) -> Status[dict[str, Any]]:
         parent = _job(request, body.parent)
         if not parent.finished:
             raise ApiError(409, "parent_running", "wait for that job to finish, then refine it")
+    voice = (body.voice or "").strip()
+    if voice and voice not in VOICES:
+        raise ApiError(422, "bad_request", f"unknown voice {voice!r}")
+    if not voice and parent is not None:
+        voice = parent.voice  # a chat keeps its voice
     services.check_rate(request.api_key)  # type: ignore[attr-defined]
     services.check_quota(org)
     job = Job.objects.create(
+        voice=voice,
         parent=parent,
         org=org,
         created_by=request.api_key,  # type: ignore[attr-defined]

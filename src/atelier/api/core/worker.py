@@ -30,7 +30,7 @@ from atelier.agent.loop import Job as AgentJob
 from atelier.agent.loop import run_job as run_agent
 from atelier.agent.plan_cache import PlanCache
 from atelier.agent.telemetry import Telemetry
-from atelier.agent.voice import VoiceService
+from atelier.agent.voice import VOICES, VoiceService
 from atelier.api.core import services
 from atelier.api.core.models import Job
 from atelier.engine.engine import Engine
@@ -218,6 +218,11 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
     prompt = f"{context}\n\nNow: {job.prompt}" if context else job.prompt
     if link_note:
         prompt = f"{prompt}\n\n{link_note}"
+    if job.voice in VOICES:
+        prompt += (
+            f"\n\nVoice for any voiceover: {VOICES[job.voice]} (voice {job.voice}); "
+            "the user chose it, so use it unless they ask for another."
+        )
     kit = brand_kit_text(job)
     handles = list(dict.fromkeys([*job.assets, *linked, *earlier]))[:20]  # new files first
     if kit:
