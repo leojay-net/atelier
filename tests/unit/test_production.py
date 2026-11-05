@@ -298,3 +298,12 @@ def test_captions_sit_at_the_bottom_of_a_landscape_video(tmp_path: Path) -> None
     drawn = frames(engine.store.path(result.outputs["out"].hash), [1.0])[0]
     rows = np.abs(drawn - plain).mean(axis=1)  # per row of the 90-row thumbnail
     assert rows[:60].max() < 4 < rows[60:].max()  # all the text is in the bottom third
+
+
+def test_tools_start_with_small_thread_stacks() -> None:
+    """Live: a 66 s captioned tutorial reserved 3.85 GB of the 4 GB step cap in 8 MB thread
+    stacks (ffmpeg 7 runs threads per input) and failed; 2 MB stacks bring it to 2.4 GB."""
+    from atelier.av import binaries
+
+    out = binaries.run(["sh", "-c", "ulimit -s"], timeout=10)
+    assert out.stdout.decode().strip() == "2048"

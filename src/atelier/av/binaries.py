@@ -16,6 +16,24 @@ from pathlib import Path
 # Never let ffmpeg open anything but local files or pipes: no http, tcp, hls playlists, etc.
 PROTOCOLS = "file,pipe"
 
+# Default stack size for the tools' threads. glibc sizes each new thread's stack from
+# RLIMIT_STACK (8 MB by default) and the step's RLIMIT_AS counts it: ffmpeg 7 gives every
+# input its own threads, so a long captioned video (60+ inputs, 275 threads) reserved 3.85 GB
+# of a 4 GB cap with 1.2 GB in use and failed ("no packets" / "Cannot allocate memory").
+# At 2 MB the same render peaks at 2.4 GB (live 2026-11-05).
+THREAD_STACK = 2 << 20
+
+
+def _small_stacks() -> None:  # runs in the child between fork and exec
+    try:
+        import resource
+
+        _soft, hard = resource.getrlimit(resource.RLIMIT_STACK)
+        limit = THREAD_STACK if hard == resource.RLIM_INFINITY else min(THREAD_STACK, hard)
+        resource.setrlimit(resource.RLIMIT_STACK, (limit, hard))
+    except (ImportError, ValueError, OSError):
+        pass
+
 
 class ToolNotFound(RuntimeError):
     pass
@@ -49,4 +67,5 @@ def run(
         stdin=subprocess.DEVNULL,
         cwd=cwd,
         env=env,
+        preexec_fn=_small_stacks if os.name == "posix" else None,
     )
