@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BookMarked,
   Drama,
+  Loader2,
   Library,
   ListChecks,
   LogOut,
@@ -40,6 +41,12 @@ function ago(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
+}
+
+/** Inside a chat's link: a spinner while that chat opens, else when it was last used. */
+function OpeningOr({ children }: { children: React.ReactNode }) {
+  const { pending } = useLinkStatus();
+  return pending ? <Loader2 size={12} className="shrink-0 animate-spin text-accent" /> : <>{children}</>;
 }
 
 function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: boolean; onChanged: () => void }) {
@@ -114,9 +121,11 @@ function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: bool
         <Link href={`/studio/${chat.id}`} title={chat.title} className="flex min-w-0 flex-1 items-center gap-2">
           <MessageSquare size={13} className="shrink-0 opacity-60" />
           <span className="min-w-0 flex-1 truncate">{chat.title}</span>
-          <span className="shrink-0 text-[10px] text-fg-tertiary group-hover:hidden">
-            {chat.status === "running" || chat.status === "queued" ? "…" : ago(chat.updated_at)}
-          </span>
+          <OpeningOr>
+            <span className="shrink-0 text-[10px] text-fg-tertiary group-hover:hidden">
+              {chat.status === "running" || chat.status === "queued" ? "…" : ago(chat.updated_at)}
+            </span>
+          </OpeningOr>
         </Link>
         <button
           type="button"

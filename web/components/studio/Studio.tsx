@@ -162,7 +162,7 @@ function Stage({
       <div className="relative flex min-h-[260px] flex-1 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black">
         {shown ? (
           shown.media === "video" ? (
-            <video key={shown.handle} src={contentUrl(shown.handle)} controls className="max-h-full max-w-full" />
+            <video key={shown.handle} src={contentUrl(shown.handle)} controls preload="metadata" className="max-h-full max-w-full" />
           ) : shown.media === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL
             <img src={contentUrl(shown.handle)} alt="Your result" className="max-h-full max-w-full object-contain" />
