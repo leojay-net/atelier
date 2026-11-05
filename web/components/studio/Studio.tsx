@@ -362,7 +362,10 @@ function Turn({
                 className="flex w-full items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-left text-[13px] hover:border-accent"
               >
                 <Sparkles size={14} className="text-accent" />
-                <span className="flex-1">Your {o.media === "audio" ? "audio" : o.media} is ready — show it</span>
+                <span className="flex-1">
+                  Your {o.media === "pptx" ? "presentation" : o.media === "image" ? "picture" : o.media === "pdf" ? "PDF" : o.media}{" "}
+                  is ready — show it
+                </span>
               </button>
             ))}
             {job.result?.warnings?.length ? (

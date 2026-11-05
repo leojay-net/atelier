@@ -414,7 +414,7 @@
       ]
     },
     "ops": {
-      "image.text": "1.0.1"
+      "image.text": "1.0.2"
     },
     "outputs": {
       "s1": "px:851164b300d545c7d4a91617802d0df5ac351fe590caf232455ee68d754a64f4"
@@ -448,7 +448,7 @@
       ]
     },
     "ops": {
-      "image.text": "1.0.1"
+      "image.text": "1.0.2"
     },
     "outputs": {
       "s1": "px:b931ead7b228aeaec58effcf354510abb857bd93683839f8c276df6c7954f78e"
@@ -592,7 +592,7 @@
     },
     "ops": {
       "export": "1.0.0",
-      "image.text": "1.0.1"
+      "image.text": "1.0.2"
     },
     "outputs": {
       "s2": "px:851164b300d545c7d4a91617802d0df5ac351fe590caf232455ee68d754a64f4"

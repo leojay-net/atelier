@@ -6,6 +6,9 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 ## Unreleased
 
 ### Library, chats, presentations (2026-11-05)
+- `image.text`, `video.text`, `video.captions`, `video.lower_third` 1.0.1 → 1.0.2: leading
+  indentation is kept (tabs as 4 spaces), so code on a slide stays valid Python.
+- `pptx.create`: pictures are reused in order when there are fewer than slides (no refusal).
 - New op `pptx.create` 1.0.0: a new 16:9 PowerPoint deck from pictures and an outline (title
   slide with the picture full-bleed; content slides with title, bullets and the picture on the
   right; speaker notes), real editable text, deterministic package. Catalogue budget 3240 → 3290.

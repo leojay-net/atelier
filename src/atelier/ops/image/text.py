@@ -141,13 +141,15 @@ def check_glyphs(text: str, family: str, weight: str) -> None:
 def _wrap(text: str, font: ImageFont.FreeTypeFont, max_w: float) -> list[str]:
     lines: list[str] = []
     for para in text.split("\n"):
-        line = ""
-        for word in para.split(" "):
-            candidate = f"{line} {word}" if line else word
+        # keep leading indentation (code on a slide: `    print(fruit)` must stay indented)
+        lead = para[: len(para) - len(para.lstrip(" \t"))].replace("\t", "    ")
+        line = lead
+        for word in para.lstrip(" \t").split(" "):
+            candidate = f"{line} {word}" if line.strip() else f"{line}{word}"
             if font.getlength(candidate) <= max_w:
                 line = candidate
                 continue
-            if line:
+            if line.strip():
                 lines.append(line)
             line = word
             while font.getlength(line) > max_w and len(line) > 1:
@@ -319,7 +321,7 @@ def _is_large(px: int, weight: str) -> bool:
 
 @image_op(
     name="image.text",
-    version="1.0.1",
+    version="1.0.2",
     params=TextParams,
     description="typeset text in a box; auto-fit, wrap, stroke, shadow, contrast guard",
     determinism=Determinism.PERCEPTUAL,
