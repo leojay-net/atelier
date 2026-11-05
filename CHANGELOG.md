@@ -5,6 +5,15 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 
 ## Unreleased
 
+### Production quality, day 2 (2026-11-05, docs/14)
+- `video.text`, `video.captions`, `video.lower_third` 1.0.2 → 1.1.0: `animate` (default `auto`):
+  titles rise and fade in (and out), caption phrases pop in; animated layers are short looped
+  streams from their start time, so only on-screen frames are decoded.
+- New op `video.sfx` 1.0.0: synthesized, seeded sound effects (whoosh into cuts, pop on titles,
+  riser into the hook, impact) mixed at given times; nothing to license, deterministic.
+- Prompt: finish like an editor (whoosh on cuts, pop on titles, riser into the hook). Prompt
+  budget 5000 → 5200, catalogue budget 3290 → 3340.
+
 ### Production quality, day 1 (2026-11-05, docs/14)
 - `video.slideshow` 1.1.0 → 1.2.0: `motion` (default `auto`): every picture gets a slow, eased
   camera move (push in/out, pans, drift), prepared at 2x so it glides; `none` keeps stills.

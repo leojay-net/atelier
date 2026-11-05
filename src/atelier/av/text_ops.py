@@ -67,6 +67,11 @@ class TextLook(Params):
         None, gt=0, le=0.3, description="text height x the shorter frame side; omit for the style's"
     )
     color: Color | None = Field(None, description="text color; omit for the style's")
+    animate: Literal["auto", "none", "rise", "pop"] = Field(
+        "auto",
+        description="how it appears: rise slides up and fades in, pop grows in; auto is rise for "
+        "titles and pop for captions",
+    )
 
 
 class TextParams(TextLook):
@@ -103,23 +108,76 @@ def _style(look: TextLook, frame: tuple[int, int]) -> TextStyle:
     )
 
 
+RISE_IN, RISE_OUT, POP_IN = 0.45, 0.3, 0.2  # seconds
+
+
+def _ease(start: float, length: float) -> str:
+    """Smoothstep 0 → 1 from `start` over `length` seconds, as an ffmpeg expression in t."""
+    p = f"clip((t-{num(start)})/{num(length)},0,1)"
+    return f"({p}*{p}*(3-2*{p}))"
+
+
 def _place(
-    g: Graph, layer: Layer, start: float, end: float | None
+    g: Graph, layer: Layer, start: float, end: float | None, animate: str = "none"
 ) -> tuple[float, float, float, float]:
-    """Add one rendered layer to the graph, shown from `start` to `end`."""
+    """Add one rendered layer to the graph, shown from `start` to `end`. An animated layer
+    becomes a short looped stream that starts at `start` (so only the frames on screen are
+    decoded) and rises or pops in with eased timing, fading out at `end`."""
     name = g.write_file(f"layer{len(g.sources)}.png", _png(layer))
     index = g.add_source(
         Source(g.work / name, MediaType.IMAGE, ".png", {"size": list(layer.image.size)})
     )
     window = f"gte(t,{num(start)})" if end is None else f"between(t,{num(start)},{num(end)})"
     assert g.video is not None
+    stop = end if end is not None else g.duration
+    if animate == "none" or stop is None or stop - start < 0.3:
+        (g.video,) = g.add(
+            "overlay",
+            {"x": layer.x, "y": layer.y, "enable": window},
+            ins=[g.video, g.source_label(index)],
+            prefix="v",
+        )
+        return layer.box
+    fps = g.fps or 30.0
+    g.sources[index].opts = (
+        "-loop", "1", "-framerate", num(fps), "-t", num(stop - start + 0.1),
+        "-itsoffset", num(start), "-f", "image2",
+    )  # fmt: skip
+    (lay,) = g.add("format", {"pix_fmts": "rgba"}, ins=[g.source_label(index)], prefix="v")
+    w0, h0 = layer.image.size
+    if animate == "pop":
+        k = f"(0.8+0.2*(1-pow(1-clip((t-{num(start)})/{POP_IN},0,1),3)))"
+        (lay,) = g.add(
+            "scale", {"w": f"max(2,iw*{k})", "h": f"max(2,ih*{k})", "eval": "frame"},
+            ins=[lay], prefix="v",
+        )  # fmt: skip
+        (lay,) = g.add(
+            "fade", {"t": "in", "st": num(start), "d": "0.12", "alpha": 1}, ins=[lay], prefix="v"
+        )
+        x, y = f"{layer.x}+({w0}-w)/2", f"{layer.y}+({h0}-h)/2"
+    else:  # rise
+        (lay,) = g.add(
+            "fade", {"t": "in", "st": num(start), "d": num(RISE_IN), "alpha": 1},
+            ins=[lay], prefix="v",
+        )  # fmt: skip
+        if end is not None:
+            (lay,) = g.add(
+                "fade", {"t": "out", "st": num(stop - RISE_OUT), "d": num(RISE_OUT), "alpha": 1},
+                ins=[lay], prefix="v",
+            )  # fmt: skip
+        lift = round(0.035 * g.height)
+        x, y = str(layer.x), f"{layer.y}+{lift}*(1-{_ease(start, RISE_IN)})"
     (g.video,) = g.add(
         "overlay",
-        {"x": layer.x, "y": layer.y, "enable": window},
-        ins=[g.video, g.source_label(index)],
+        {"x": x, "y": y, "enable": window, "eval": "frame"},
+        ins=[g.video, lay],
         prefix="v",
     )
     return layer.box
+
+
+def _motion(look: TextLook, default: str) -> str:
+    return default if look.animate == "auto" else look.animate
 
 
 def _png(layer: Layer) -> bytes:
@@ -148,7 +206,7 @@ def _record(
 
 @video_op(
     name="video.text",
-    version="1.0.2",
+    version="1.1.0",
     params=TextParams,
     description="put a title or a line of text on the video for a time range",
     also=("pillow", "icc", "fonts"),
@@ -166,7 +224,7 @@ def text(g: Graph, p: TextParams) -> None:
     layer = render_layer(p.text, _style(p, frame), frame, box)
     if layer.box[2] == 0:
         raise OpError("the text drew nothing: it has no printable characters")
-    _record(g, "text", p.text[:32], [_place(g, layer, p.start, p.end)])
+    _record(g, "text", p.text[:32], [_place(g, layer, p.start, p.end, _motion(p, "rise"))])
 
 
 # -- captions ----------------------------------------------------------------------------------
@@ -186,7 +244,7 @@ def _timed(cues: list[Cue], shift: float, total: float | None) -> list[Cue]:
 
 @video_op(
     name="video.captions",
-    version="1.0.2",
+    version="1.1.0",
     params=CaptionsParams,
     inputs=(MediaType.VIDEO, MediaType.TEXT),
     description="burn in captions from an SRT/WebVTT file (second input)",
@@ -213,7 +271,7 @@ def captions(g: Graph, p: CaptionsParams) -> None:
     for cue in cues:
         layer = render_layer(cue.text, style, frame, box)
         if layer.box[2] > 0:
-            drawn.append(_place(g, layer, cue.start, cue.end))
+            drawn.append(_place(g, layer, cue.start, cue.end, _motion(p, "pop")))
     if not drawn:
         raise OpError("the captions drew nothing: the cues have no printable characters")
     _record(g, "captions", f"captions ({len(cues)} cues)", drawn)
@@ -236,12 +294,8 @@ class LowerThirdParams(Params):
     card_color: Color = Field(
         "#0f172ae6", description="card background color (RGBA hex, e.g. #0f172ae6)"
     )
-    text_color: Color = Field(
-        "#ffffffff", description="primary text color for name"
-    )
-    title_color: Color = Field(
-        "#94a3b8ff", description="secondary text color for title"
-    )
+    text_color: Color = Field("#ffffffff", description="primary text color for name")
+    title_color: Color = Field("#94a3b8ff", description="secondary text color for title")
     position: Literal["bottom_left", "bottom_center", "bottom_right"] = Field(
         "bottom_left", description="horizontal alignment along the lower third"
     )
@@ -329,7 +383,7 @@ def _render_lower_third(p: LowerThirdParams, frame: tuple[int, int]) -> Layer:
 
 @video_op(
     name="video.lower_third",
-    version="1.0.2",
+    version="1.1.0",
     params=LowerThirdParams,
     description="branded speaker name and title card overlay in lower third",
     also=("pillow", "icc", "fonts"),
@@ -345,4 +399,4 @@ def lower_third(g: Graph, p: LowerThirdParams) -> None:
     end = p.start + p.duration
     if total is not None:
         end = min(end, total)
-    _record(g, "lower_third", p.name, [_place(g, layer, p.start, end)])
+    _record(g, "lower_third", p.name, [_place(g, layer, p.start, end, "rise")])

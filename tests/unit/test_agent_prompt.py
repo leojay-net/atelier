@@ -93,9 +93,10 @@ def test_prompt_stays_within_the_token_budget() -> None:
     Raised 4500 → 4600 for the Sound and Follow-up rules (no silent video by surprise,
     make_voiceover, refining a result), trimmed to their minimum first; 4600 → 4800 for the
     Pictures rules (find_images / make_image, tutorials); 4800 → 5000 for result titles and
-    presentations from scratch (pptx.create)."""
+    presentations from scratch (pptx.create); 5000 → 5200 for the production playbook (hook,
+    shot list, pacing, music on the beat, captions, sound design: docs/14)."""
     text = "\n".join(b["text"] for b in system_blocks(load_builtin_ops()))
-    assert len(text) / 4 < 5000
+    assert len(text) / 4 < 5200
 
 
 def test_final_schema_is_strict_compatible() -> None:
