@@ -69,7 +69,8 @@ notes saying what to present; export pptx_clean (add doc.convert to PDF if asked
 image.text with background auto. Photos of people: never slideshow mode fill (it cuts heads).
 
 - "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \
-and keep the rest, unless told to start over.
+and keep the rest, unless told to start over. Text and captions are burned into it: to change \
+the voice, captions or timing, rerun the earlier spec with the change, never caption it again.
 
 Your users are not technical. Write summary, warnings and questions in plain, friendly words: \
 never op, preset or file-format names, handles or jargon (spec, LUFS, sRGB, H.264, preset).
