@@ -25,30 +25,35 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_LINK_MODE=copy \
     ATELIER_REFERENCE_PLATFORM=1
 
-# snapshot.debian.org is sometimes down for hours (504s). apt-get update only warns on a failed
-# fetch, so --error-on=any makes it fail; after three tries the build falls back to the regular
-# mirror (same release, newer point versions), says so loudly, and leaves a marker in the image.
+# snapshot.debian.org is sometimes down for hours (504 on the index, 503 "No healthy backends"
+# on the packages). The whole update + install is retried three times against the snapshot
+# (apt-get update only warns on a failed fetch, hence --error-on=any); then the build falls back
+# to the regular trixie mirror (same release, maybe newer point versions), says so loudly, and
+# leaves /etc/atelier-apt-fallback in the image.
 RUN set -eu \
  && mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
  && printf '%s\n' \
     "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} trixie main" \
     "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} trixie-security main" \
     > /etc/apt/sources.list \
- && ok=0; for i in 1 2 3; do \
-      if apt-get -o Acquire::Retries=3 update --error-on=any; then ok=1; break; fi; sleep 15; \
-    done \
+ && install_all() { \
+      apt-get -o Acquire::Retries=5 update --error-on=any \
+      && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+           ffmpeg \
+           libreoffice-core-nogui libreoffice-writer-nogui libreoffice-calc-nogui \
+           libreoffice-impress-nogui \
+           qpdf \
+           ca-certificates; \
+    } \
+ && ok=0 \
+ && for i in 1 2 3; do if install_all; then ok=1; break; fi; sleep 20; done \
  && if [ "$ok" = 0 ]; then \
       echo "WARNING: snapshot.debian.org unavailable; using deb.debian.org (packages not pinned)"; \
-      : > /etc/apt/sources.list; mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources; \
+      : > /etc/apt/sources.list; cp /tmp/debian.sources /etc/apt/sources.list.d/debian.sources; \
       echo "deb.debian.org" > /etc/atelier-apt-fallback; \
-      apt-get -o Acquire::Retries=3 update; \
+      install_all; \
     fi \
  && rm -f /tmp/debian.sources \
- && apt-get install -y --no-install-recommends \
-      ffmpeg \
-      libreoffice-core-nogui libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
-      qpdf \
-      ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /usr/local/bin/uv
