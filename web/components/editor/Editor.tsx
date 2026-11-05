@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import {
@@ -23,6 +23,7 @@ import type { VoiceAccent } from "@/lib/types";
 import { contentUrl } from "@/components/media/MediaPreview";
 import { readApiError } from "@/lib/errors";
 import { useUpload } from "@/hooks/useUpload";
+import { PreviewAudio } from "./previewAudio";
 
 type Part = { start: number; end: number };
 type Shape = "original" | "portrait" | "square" | "landscape";
@@ -85,6 +86,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
   const [speed, setSpeed] = useState(1);
   const [texts, setTexts] = useState<TextItem[]>([]);
   const [voice, setVoice] = useState({
+    ai: false, // made by "Make voiceover" from the text (redo when the text changes)
     on: false,
     text: "",
     voice: "",
@@ -94,6 +96,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     volume: 1,
   });
   const [music, setMusic] = useState({
+    ai: false,
     on: false,
     mode: "compose" as "compose" | "upload",
     compose: "",
@@ -108,6 +111,8 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
   const [error, setError] = useState("");
   const { items: uploads, upload } = useUpload();
   const [uploadFor, setUploadFor] = useState<"voice" | "music" | null>(null);
+  const [making, setMaking] = useState<"" | "voice" | "music">("");
+  const audio = useRef<PreviewAudio | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -131,8 +136,8 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     const handle = done.asset.handle;
     const name = done.file.name;
     if (uploadFor === "voice")
-      setVoice((v) => ({ ...v, on: true, handle, name, text: "" }));
-    else setMusic((m) => ({ ...m, on: true, mode: "upload", handle, name }));
+      setVoice((v) => ({ ...v, on: true, ai: false, handle, name, text: "" }));
+    else setMusic((m) => ({ ...m, on: true, ai: false, mode: "upload", handle, name }));
     setUploadFor(null);
   }, [uploads, uploadFor]);
   const failed = uploads.find((u) => u.status === "error");
@@ -143,6 +148,41 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     [parts, duration],
   );
   const length = kept.reduce((s, p) => s + (p.end - p.start), 0) / speed;
+
+  // source time → edited time (cuts removed, speed applied), like the server's Clock
+  const clock = useCallback(
+    (t: number): number | null => {
+      let before = 0;
+      for (const p of kept) {
+        if (t < p.end) return (before + Math.max(0, t - p.start)) / speed;
+        before += p.end - p.start;
+      }
+      return null;
+    },
+    [kept, speed],
+  );
+
+  // the sound of the preview: voiceover, music and effects in step with the picture
+  const startSound = useCallback(() => {
+    const v = video.current;
+    if (!v || !audio.current) return;
+    const layers = [];
+    if (voice.on && voice.handle)
+      layers.push({
+        url: contentUrl(voice.handle),
+        layer: { handle: voice.handle, start: clock(voice.start) ?? 0, volume: voice.volume, loop: false },
+      });
+    if (music.on && music.handle)
+      layers.push({
+        url: contentUrl(music.handle),
+        layer: { handle: music.handle, start: 0, volume: music.volume, loop: true },
+      });
+    const hits = sounds.flatMap((s) => {
+      const at = clock(s.at);
+      return at === null ? [] : [{ at, kind: s.kind }];
+    });
+    void audio.current.start(clock(v.currentTime) ?? 0, layers, hits);
+  }, [voice, music, sounds, clock]);
 
   // play only the kept parts
   function onTime() {
@@ -157,6 +197,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
       if (next) v.currentTime = next.start;
       else {
         v.pause();
+        audio.current?.stop();
         setPlaying(false);
       }
     }
@@ -167,6 +208,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     if (!v) return;
     if (playing) {
       v.pause();
+      audio.current?.stop();
       setPlaying(false);
       return;
     }
@@ -177,9 +219,17 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     )
       v.currentTime = kept[0]?.start ?? 0;
     v.playbackRate = speed;
-    v.volume = Math.min(1, volume);
+    if (!audio.current) {
+      try {
+        audio.current = new PreviewAudio(v); // needs a click to start: this is one
+      } catch {
+        audio.current = null; // no Web Audio: the picture still plays
+      }
+    }
+    audio.current?.setVideoVolume(volume);
     void v.play();
     setPlaying(true);
+    startSound();
   }
 
   function seek(clientX: number) {
@@ -191,14 +241,48 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
     );
     video.current.currentTime = t;
     setNow(t);
+    if (playing) setTimeout(startSound, 0); // the sound follows the jump
   }
 
   useEffect(() => {
-    if (video.current) {
-      video.current.playbackRate = speed;
-      video.current.volume = Math.min(1, volume);
-    }
+    if (!video.current) return;
+    video.current.playbackRate = speed;
+    if (audio.current) audio.current.setVideoVolume(volume);
+    else video.current.volume = Math.min(1, volume);
   }, [speed, volume]);
+
+  // a change while playing is heard at once
+  useEffect(() => {
+    if (playing) startSound();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the sound changes
+  }, [startSound]);
+
+  useEffect(() => () => audio.current?.stop(), []);
+
+  async function makeSound(kind: "voice" | "music") {
+    setMaking(kind);
+    setError("");
+    try {
+      const body =
+        kind === "voice"
+          ? { text: voice.text.trim(), voice: voice.voice }
+          : { style: music.compose.trim(), seconds: Math.max(10, Math.ceil(length)) };
+      const r = await fetch(`/api/proxy/jobs/${jobId}/edit/${kind === "voice" ? "voiceover" : "music"}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await readApiError(r)).message);
+      const made: { handle: string; seconds: number | null } = await r.json();
+      const name = `${made.seconds ? `${made.seconds.toFixed(1)}s` : ""}`;
+      if (kind === "voice") setVoice((v) => ({ ...v, ai: true, handle: made.handle, name }));
+      else setMusic((m) => ({ ...m, ai: true, handle: made.handle, name }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
+    } finally {
+      setMaking("");
+    }
+  }
 
   // -- trim & cut ----------------------------------------------------------------------------
   function setStart() {
@@ -273,11 +357,10 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
             }
           : null,
       music:
-        music.on &&
-        (music.mode === "upload" ? music.handle : music.compose.trim())
+        music.on && (music.handle || (music.mode === "compose" && music.compose.trim()))
           ? {
-              handle: music.mode === "upload" ? music.handle : "",
-              compose: music.mode === "compose" ? music.compose.trim() : "",
+              handle: music.handle,
+              compose: music.handle ? "" : music.compose.trim(),
               volume: music.volume,
               loop: true,
             }
@@ -478,7 +561,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                 />
                 {volume > 1 ? (
                   <p className="text-[12px] text-fg-tertiary">
-                    Louder than 100% is applied when you save.
+                    You hear it louder in the preview too.
                   </p>
                 ) : null}
                 <p className="pt-2 font-medium">Speed</p>
@@ -636,18 +719,10 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                 </label>
                 {voice.on ? (
                   <>
-                    {voice.handle ? (
+                    {voice.handle && !voice.ai ? (
                       <div className="flex items-center justify-between rounded-md bg-bg-subtle px-2 py-1.5">
-                        <span className="truncate">
-                          🎙 {voice.name || "Your recording"}
-                        </span>
-                        <button
-                          type="button"
-                          className="text-[12px] underline"
-                          onClick={() =>
-                            setVoice({ ...voice, handle: "", name: "" })
-                          }
-                        >
+                        <span className="truncate">🎙 {voice.name || "Your recording"}</span>
+                        <button type="button" className="text-[12px] underline" onClick={() => setVoice({ ...voice, handle: "", name: "" })}>
                           remove
                         </button>
                       </div>
@@ -658,23 +733,17 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                           placeholder="Type what the voice should say…"
                           rows={4}
                           value={voice.text}
-                          onChange={(e) =>
-                            setVoice({ ...voice, text: e.target.value })
-                          }
+                          onChange={(e) => setVoice({ ...voice, text: e.target.value, ...(voice.ai ? { handle: "", ai: false } : {}) })}
                           className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 outline-none focus:border-accent"
                         />
                         <select
                           aria-label="Voice"
                           value={voice.voice}
-                          onChange={(e) =>
-                            setVoice({ ...voice, voice: e.target.value })
-                          }
+                          onChange={(e) => setVoice({ ...voice, voice: e.target.value, ...(voice.ai ? { handle: "", ai: false } : {}) })}
                           className="w-full rounded-md border border-border bg-bg px-2 py-1.5"
                         >
                           <option value="">American woman (default)</option>
-                          {mine ? (
-                            <option value="my_voice">My voice</option>
-                          ) : null}
+                          {mine ? <option value="my_voice">My voice</option> : null}
                           {accents.map((a) => (
                             <optgroup key={a.id} label={a.label}>
                               {a.voices.map((v) => (
@@ -685,6 +754,16 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                             </optgroup>
                           ))}
                         </select>
+                        {voice.ai && voice.handle ? (
+                          <p className="flex items-center gap-1.5 text-[12px] text-green-600 dark:text-green-400">
+                            ✓ Voiceover ready ({voice.name}). Press play to hear it with the video.
+                          </p>
+                        ) : (
+                          <Btn onClick={() => makeSound("voice")} disabled={!voice.text.trim() || making === "voice"}>
+                            {making === "voice" ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                            {making === "voice" ? "Making it…" : "Make voiceover"}
+                          </Btn>
+                        )}
                         <Btn
                           onClick={() => {
                             setUploadFor("voice");
@@ -735,7 +814,7 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                     <div className="grid grid-cols-2 gap-2">
                       <Btn
                         active={music.mode === "compose"}
-                        onClick={() => setMusic({ ...music, mode: "compose" })}
+                        onClick={() => setMusic({ ...music, mode: "compose", ...(music.ai ? {} : { handle: "", name: "" }) })}
                       >
                         <Sparkles size={13} /> AI makes it
                       </Btn>
@@ -750,19 +829,27 @@ export function Editor({ jobId, source }: { jobId: string; source: string }) {
                       </Btn>
                     </div>
                     {music.mode === "compose" ? (
-                      <input
-                        aria-label="What music"
-                        placeholder="e.g. upbeat afrobeats, calm piano, epic cinematic"
-                        value={music.compose}
-                        onChange={(e) =>
-                          setMusic({ ...music, compose: e.target.value })
-                        }
-                        className="w-full rounded-md border border-border bg-bg px-2 py-1.5 outline-none focus:border-accent"
-                      />
+                      <>
+                        <input
+                          aria-label="What music"
+                          placeholder="e.g. upbeat afrobeats, calm piano, epic cinematic"
+                          value={music.compose}
+                          onChange={(e) => setMusic({ ...music, compose: e.target.value, ...(music.ai ? { handle: "", ai: false } : {}) })}
+                          className="w-full rounded-md border border-border bg-bg px-2 py-1.5 outline-none focus:border-accent"
+                        />
+                        {music.ai && music.handle ? (
+                          <p className="text-[12px] text-green-600 dark:text-green-400">
+                            ✓ Music ready ({music.name}). Press play to hear it with the video.
+                          </p>
+                        ) : (
+                          <Btn onClick={() => makeSound("music")} disabled={!music.compose.trim() || making === "music"}>
+                            {making === "music" ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                            {making === "music" ? "Composing…" : "Make music"}
+                          </Btn>
+                        )}
+                      </>
                     ) : music.handle ? (
-                      <p className="rounded-md bg-bg-subtle px-2 py-1.5">
-                        ♪ {music.name}
-                      </p>
+                      <p className="rounded-md bg-bg-subtle px-2 py-1.5">♪ {music.name}</p>
                     ) : null}
                     <Slider
                       label={`Music volume ${Math.round(music.volume * 100)}%`}

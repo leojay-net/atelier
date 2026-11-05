@@ -198,3 +198,66 @@ def test_the_editor_makes_the_next_version_in_the_chat() -> None:
         {"source": api.upload("a.wav", TONE.read_bytes()).json()["handle"]},
     )
     assert upload.status_code == 422
+
+
+class FakeComposer:
+    def compose(self, style: str, seconds: int, bpm: int, seed: int) -> bytes:
+        return subprocess.run(  # real MP3, as the music service returns
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=f=220:d={seconds}",
+                "-c:a",
+                "libmp3lame",
+                "-f",
+                "mp3",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        ).stdout
+
+
+def test_voiceover_and_music_are_made_ahead_to_hear_in_the_preview(settings: Any) -> None:
+    _, api = make_org("acme")
+    clip = api.upload("clip.mp4", CLIP.read_bytes()).json()["handle"]
+    api_support.model = ScriptedModel(
+        message(
+            [text(json.dumps({"title": "T", "summary": "Ok", "warnings": [], "question": ""}))],
+            "end_turn",
+        )
+    )
+    first = api.post("/jobs", {"prompt": "hello", "assets": [clip]}).json()
+    api_support.voice = voice = FakeVoice()
+    made = api.post(
+        f"/jobs/{first['id']}/edit/voiceover", {"text": "Hi there.", "voice": "kenyan_woman"}
+    )
+    assert made.status_code == 200, made.content
+    vo = made.json()
+    assert vo["handle"].startswith("asset:") and vo["seconds"] > 0
+    assert voice.calls == [("Hi there.", "kenyan_woman")]
+    assert api.get(f"/assets/{vo['handle']}/content").status_code == 200  # playable now
+    assert api.post(f"/jobs/{first['id']}/edit/voiceover", {"text": " "}).status_code == 422
+    settings.ATELIER_MUSIC_CLIENT = "test_edits.composer"
+    music = api.post(
+        f"/jobs/{first['id']}/edit/music", {"style": "calm piano", "seconds": 12}
+    ).json()
+    assert music["handle"].startswith("asset:")
+    saved = api.post(
+        f"/jobs/{first['id']}/edit",
+        {
+            "source": clip,
+            "voiceover": {"handle": vo["handle"]},
+            "music": {"handle": music["handle"]},
+        },
+    ).json()
+    assert saved["status"] == "succeeded", saved["error"]
+    assert voice.calls == [("Hi there.", "kenyan_woman")]  # reused
+
+
+def composer() -> FakeComposer:
+    return FakeComposer()
