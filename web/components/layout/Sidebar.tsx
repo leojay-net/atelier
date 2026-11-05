@@ -153,7 +153,7 @@ function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: bool
         </div>
       )}
       {mode === "confirm" && (
-        <div className="absolute right-1 top-8 z-20 w-60 rounded-md border border-border bg-bg p-3 shadow-lg">
+        <div className="absolute inset-x-0 top-8 z-20 rounded-md border border-border bg-bg p-3 shadow-lg">
           <DeleteChatChoice onDelete={remove} onCancel={() => setMode("idle")} />
         </div>
       )}
