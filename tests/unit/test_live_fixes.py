@@ -96,3 +96,15 @@ def test_a_slideshow_shows_whole_photos_over_a_blur_by_default(tmp_path: Path) -
     assert left[0] > 150 > left[2] and right[2] > 150 > right[0]  # both edges of the photo
     top = im.getpixel((w // 2, 5))
     assert sum(top) > 60  # a blurred copy above the photo, not black bars
+
+
+def test_code_on_a_slide_keeps_its_indentation() -> None:
+    """Live: a tutorial slide showed `for fruit in fruits:` / `print(fruit)` unindented."""
+    from atelier.ops.image.text import _font, _wrap
+
+    font = _font("Inter", "bold", 40)
+    assert _wrap("for fruit in fruits:\n    print(fruit)", font, 2000) == [
+        "for fruit in fruits:",
+        "    print(fruit)",
+    ]
+    assert _wrap("\tx = 1", font, 2000) == ["    x = 1"]
