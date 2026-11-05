@@ -51,7 +51,7 @@ MAX_ASSETS_PER_CALL = 20
 MAX_NAMES_PER_CALL = 12
 MAX_VOICEOVERS = 4  # per job
 MAX_FOUND = 12  # pictures found per job
-MAX_MADE = 8  # pictures generated per job
+MAX_MADE = 12  # pictures generated per job (a 30 s reel needs 8-15 shots)
 MAX_MUSIC = 2  # tracks composed per job
 
 PREVIEW_KINDS = {"thumb": "thumb", "crop": "crop", "compare": "compare", "contact_sheet": "sheet"}
