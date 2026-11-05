@@ -281,10 +281,10 @@ def _move(g: Graph, v: str, move: str, seconds: float, size: tuple[int, int], fp
         ins=[v],
         prefix="v",
     )
+    # zoompan already starts at 0 at the target rate. No setpts/fps after it: on ffmpeg 7 a
+    # setpts here leaves the rate unset (xfade refuses "1/0") and an fps filter drops each
+    # shot's last frame; this chain is frame-exact on ffmpeg 7.1 and 8.
     (v,) = g.add("setsar", {"sar": 1}, ins=[v], prefix="v")
-    (v,) = g.add("setpts", {"expr": "PTS-STARTPTS"}, ins=[v], prefix="v")
-    # ffmpeg 7: setpts leaves the link's rate unset and xfade refuses "1/0"; fps restores it
-    (v,) = g.add("fps", {"fps": num(fps)}, ins=[v], prefix="v")
     (v,) = g.add("format", {"pix_fmts": "yuv420p"}, ins=[v], prefix="v")
     return v
 
