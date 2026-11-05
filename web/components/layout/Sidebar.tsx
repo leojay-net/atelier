@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -9,8 +9,11 @@ import {
   ListChecks,
   LogOut,
   MessageSquare,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Settings,
+  Trash2,
   Wand2,
 } from "lucide-react";
 import clsx from "clsx";
@@ -36,6 +39,153 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: boolean; onChanged: () => void }) {
+  const router = useRouter();
+  const [mode, setMode] = useState<"idle" | "menu" | "rename" | "confirm">("idle");
+  const [name, setName] = useState(chat.title);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (mode === "idle") return;
+    const close = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setMode("idle");
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [mode]);
+
+  async function rename() {
+    const title = name.trim();
+    if (!title || title === chat.title) return setMode("idle");
+    setBusy(true);
+    const r = await fetch(`/api/proxy/conversations/${chat.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!r?.ok) return setError("Couldn't rename it. Try again.");
+    setMode("idle");
+    onChanged();
+  }
+
+  async function remove() {
+    setBusy(true);
+    const r = await fetch(`/api/proxy/conversations/${chat.id}`, { method: "DELETE" }).catch(() => null);
+    setBusy(false);
+    if (!r?.ok) return setError("Couldn't delete it. Try again.");
+    setMode("idle");
+    onChanged();
+    if (active) {
+      window.dispatchEvent(new Event(NEW_CHAT_EVENT));
+      router.push("/");
+    }
+  }
+
+  if (mode === "rename")
+    return (
+      <div ref={box} className="px-1 py-0.5">
+        <input
+          autoFocus
+          aria-label="Chat name"
+          value={name}
+          maxLength={120}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") rename();
+            if (e.key === "Escape") setMode("idle");
+          }}
+          onBlur={rename}
+          className="w-full rounded-sm border border-accent bg-bg px-2 py-1 text-[13px] text-fg outline-none"
+        />
+        {error && <p className="px-1 pt-0.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
+      </div>
+    );
+
+  return (
+    <div ref={box} className="relative">
+      <div
+        className={clsx(
+          "group flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-[13px] transition-colors",
+          active ? "bg-bg-inset text-fg" : "text-fg-secondary hover:bg-bg-inset hover:text-fg",
+        )}
+      >
+        <Link href={`/studio/${chat.id}`} title={chat.title} className="flex min-w-0 flex-1 items-center gap-2">
+          <MessageSquare size={13} className="shrink-0 opacity-60" />
+          <span className="min-w-0 flex-1 truncate">{chat.title}</span>
+          <span className="shrink-0 text-[10px] text-fg-tertiary group-hover:hidden">
+            {chat.status === "running" || chat.status === "queued" ? "…" : ago(chat.updated_at)}
+          </span>
+        </Link>
+        <button
+          type="button"
+          aria-label={`Options for ${chat.title}`}
+          onClick={() => {
+            setError("");
+            setMode(mode === "menu" ? "idle" : "menu");
+          }}
+          className={clsx(
+            "shrink-0 rounded-sm p-0.5 text-fg-tertiary hover:bg-bg hover:text-fg",
+            mode === "menu" ? "block" : "hidden group-hover:block focus:block",
+          )}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      </div>
+      {mode === "menu" && (
+        <div className="absolute right-1 top-8 z-20 w-40 rounded-md border border-border bg-bg p-1 shadow-lg">
+          <button
+            type="button"
+            onClick={() => {
+              setName(chat.title);
+              setMode("rename");
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] text-fg-secondary hover:bg-bg-inset hover:text-fg"
+          >
+            <Pencil size={13} /> Rename
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("confirm")}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] text-red-600 dark:text-red-400 hover:bg-bg-inset"
+          >
+            <Trash2 size={13} /> Delete
+          </button>
+        </div>
+      )}
+      {mode === "confirm" && (
+        <div className="absolute right-1 top-8 z-20 w-52 rounded-md border border-border bg-bg p-3 shadow-lg">
+          <p className="text-[13px] font-medium text-fg">Delete this chat?</p>
+          <p className="mt-1 text-[12px] text-fg-secondary">
+            It leaves your chat list. Anything it made stays in your Library.
+          </p>
+          {error && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
+          <div className="mt-2.5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setMode("idle")}
+              className="rounded-sm px-2 py-1 text-[12px] text-fg-secondary hover:bg-bg-inset"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={remove}
+              className="rounded-sm bg-red-600 hover:bg-red-700 px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-60"
+            >
+              {busy ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RecentChats({ active }: { active: string | null }) {
   const [chats, setChats] = useState<Conversation[] | null>(null);
   useEffect(() => {
@@ -59,21 +209,12 @@ function RecentChats({ active }: { active: string | null }) {
   return (
     <div className="flex flex-col gap-0.5">
       {chats.map((c) => (
-        <Link
+        <ChatRow
           key={c.id}
-          href={`/studio/${c.id}`}
-          title={c.title}
-          className={clsx(
-            "group flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-[13px] transition-colors",
-            active === c.id ? "bg-bg-inset text-fg" : "text-fg-secondary hover:bg-bg-inset hover:text-fg",
-          )}
-        >
-          <MessageSquare size={13} className="shrink-0 opacity-60" />
-          <span className="min-w-0 flex-1 truncate">{c.title}</span>
-          <span className="shrink-0 text-[10px] text-fg-tertiary">
-            {c.status === "running" || c.status === "queued" ? "…" : ago(c.updated_at)}
-          </span>
-        </Link>
+          chat={c}
+          active={active === c.id}
+          onChanged={() => window.dispatchEvent(new Event(CHATS_CHANGED_EVENT))}
+        />
       ))}
     </div>
   );

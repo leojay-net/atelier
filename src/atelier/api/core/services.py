@@ -170,8 +170,23 @@ def latest_in_thread(job: Job) -> Job:
     return job
 
 
+def thread_jobs(end: Job) -> list[Job]:
+    """Every job in the conversation ending at `end`, newest first."""
+    chain, node = [], end
+    for _ in range(100):
+        if node is None:
+            break
+        chain.append(node)
+        node = node.parent
+    return chain
+
+
 def thread_title(job: Job) -> str:
-    """A conversation's name: the newest AI title in it, else its first request."""
+    """A conversation's name: the name the user gave it, else the newest AI title in it, else
+    its first request."""
+    named = next((j.chat_title for j in thread_jobs(job) if j.chat_title), "")
+    if named:
+        return named
     node: Job | None = job
     first = job
     for _ in range(100):
@@ -233,7 +248,7 @@ def library(org: Org, section: str, media: str, limit: int, offset: int) -> dict
 def conversations(org: Org, limit: int = 50) -> list[dict[str, Any]]:
     """Each conversation once, newest first, by its latest job (prompt jobs with no follow-up)."""
     ends = (
-        Job.objects.filter(org=org, kind="prompt", followups__isnull=True)
+        Job.objects.filter(org=org, kind="prompt", followups__isnull=True, chat_deleted=False)
         .order_by("-created_at")
         .select_related("parent")[:limit]
     )
@@ -396,6 +411,7 @@ def job_dict(job: Job, *, events: bool = False) -> dict[str, Any]:
         "finished_at": job.finished_at,
         "units": job.units,
         "compute_seconds": job.compute_seconds,
+        "voice": job.voice,
     }
     if job.kind == "spec" or job.finished:
         out["spec"] = job.spec

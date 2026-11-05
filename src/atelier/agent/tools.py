@@ -28,6 +28,8 @@ from atelier.agent.budget import Budget
 from atelier.agent.music import MusicError, MusicService
 from atelier.agent.pictures import PictureError, PictureService
 from atelier.agent.voice import (
+    ACCENTS,
+    BUILT_IN,
     DEFAULT_VOICE,
     MAX_CHARS,
     VOICES,
@@ -156,7 +158,8 @@ TOOLS: list[dict[str, Any]] = sorted(
             "user asks for a voiceover without giving the words: plain, conversational "
             "sentences, about 2.5 words per second of video. Then put it on the video with "
             "video.soundtrack (mode replace, loop false) or under existing sound with audio.mix. "
-            f"voice: one of {', '.join(f'{k} ({v})' for k, v in VOICES.items())}.",
+            "voice: <accent>_<woman|man>, accents: " + ", ".join(ACCENTS) + ". Use the "
+            "voice the user chose; else match their accent or audience; default american_woman.",
             {
                 "properties": {
                     "text": {"type": "string", "description": "the exact words to speak"},
@@ -408,9 +411,10 @@ class Toolbox:
                 f"{MAX_CHARS} (about 4 minutes of speech)",
                 is_error=True,
             )
-        if voice not in VOICES:
+        if voice not in VOICES and voice not in BUILT_IN:
             return ToolOutcome(
-                f"make_voiceover: unknown voice {voice!r}; use one of {', '.join(VOICES)}",
+                f"make_voiceover: unknown voice {voice!r}; use <accent>_<woman|man>, e.g. "
+                "nigerian_man, british_woman",
                 is_error=True,
             )
         if self.voice is None:

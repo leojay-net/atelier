@@ -139,7 +139,7 @@ def test_voiceover_tool_errors_are_explained(tmp_path: Path) -> None:
     box.voice = FakeVoice(tmp_path)
     assert "empty" in str(box.dispatch("make_voiceover", {"text": " ", "voice": "serena"}).content)
     bad = box.dispatch("make_voiceover", {"text": "Hi.", "voice": "alloy"})
-    assert bad.is_error and "serena" in str(bad.content)
+    assert bad.is_error and "nigerian_man" in str(bad.content)
     long = box.dispatch("make_voiceover", {"text": "word " * 1000, "voice": "serena"})
     assert long.is_error and "under" in str(long.content)
     for _ in range(MAX_VOICEOVERS):

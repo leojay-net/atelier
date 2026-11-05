@@ -59,6 +59,11 @@ class Api:
             f"/api/v1{path}", json.dumps(body), content_type="application/json", **self.headers
         )
 
+    def patch(self, path: str, body: Any) -> Any:
+        return self.client.patch(
+            f"/api/v1{path}", json.dumps(body), content_type="application/json", **self.headers
+        )
+
     def delete(self, path: str) -> Any:
         return self.client.delete(f"/api/v1{path}", **self.headers)
 

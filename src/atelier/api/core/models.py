@@ -133,6 +133,9 @@ class Job(models.Model):
     cancel_requested = models.BooleanField(default=False)
     units = models.FloatField(default=0.0)  # agent cost in billed-token equivalents
     compute_seconds = models.FloatField(default=0.0)
+    voice = models.CharField(max_length=40, blank=True)  # the voiceover voice the user chose
+    chat_title = models.CharField(max_length=120, blank=True)  # the user's name for the chat
+    chat_deleted = models.BooleanField(default=False)  # removed from the chat list
 
     class Meta:
         indexes = [models.Index(fields=["org", "-created_at"])]

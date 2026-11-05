@@ -109,6 +109,8 @@ export interface Job {
   recipe: string | null;
   /** The job this one follows up on ("refine this"), if any. */
   parent?: string | null;
+  /** The voiceover voice chosen for this chat ("" = let the AI pick). */
+  voice?: string;
   result: JobResult | null;
   error: string;
   created_at: string;
@@ -233,4 +235,15 @@ export interface LibraryPage {
   counts: Record<LibrarySection, number>;
   count: number;
   items: LibraryItem[];
+}
+
+export interface VoiceChoice {
+  id: string;
+  label: string;
+}
+
+export interface VoiceAccent {
+  id: string;
+  label: string;
+  voices: VoiceChoice[];
 }

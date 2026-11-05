@@ -16,17 +16,39 @@ import urllib.error
 import urllib.request
 from typing import Protocol
 
-# qwen3-tts voices on Vultr Serverless Inference (the endpoint lists them in its 400 error).
-VOICES: dict[str, str] = {
-    "serena": "warm, natural female voice (default)",
-    "vivian": "bright female voice",
-    "ryan": "friendly male voice",
-    "eric": "calm male voice",
-    "dylan": "energetic male voice",
-    "aiden": "young male voice",
-    "uncle_fu": "older, deep male voice",
+# Voices: an accent and a woman's or a man's voice, made with qwen3-tts "voice design" (a
+# described voice) and a fixed seed, so every sentence of a voiceover is the same person.
+# Live feedback: the built-in qwen speakers all sounded Asian-accented in English.
+ACCENTS: dict[str, tuple[str, str]] = {  # id -> (label, how the accent is described)
+    "american": ("American", "a General American accent"),
+    "british": ("British", "a standard Southern British English accent"),
+    "nigerian": ("Nigerian", "a natural Nigerian English accent"),
+    "ghanaian": ("Ghanaian", "a natural Ghanaian English accent"),
+    "kenyan": ("Kenyan", "a natural Kenyan English accent"),
+    "south_african": ("South African", "a natural South African English accent"),
+    "indian": ("Indian", "a natural Indian English accent"),
+    "australian": ("Australian", "a natural Australian accent"),
+    "irish": ("Irish", "a natural Irish accent"),
+    "scottish": ("Scottish", "a natural Scottish accent"),
+    "jamaican": ("Jamaican", "a natural Jamaican English accent"),
 }
-DEFAULT_VOICE = "serena"
+PEOPLE: dict[str, tuple[str, str]] = {
+    "woman": ("woman", "A warm, friendly woman in her late twenties"),
+    "man": ("man", "A warm, confident man in his thirties"),
+}
+DESIGNED: dict[str, tuple[str, str]] = {  # voice id -> (label, voice description)
+    f"{a}_{g}": (
+        f"{label} {who}",
+        f"{person} speaking English with {accent}; clear, upbeat and natural, like a presenter.",
+    )
+    for a, (label, accent) in ACCENTS.items()
+    for g, (who, person) in PEOPLE.items()
+}
+# the original qwen3-tts speakers, still accepted for earlier requests
+BUILT_IN = ("serena", "vivian", "ryan", "eric", "dylan", "aiden", "uncle_fu")
+VOICES: dict[str, str] = {k: label for k, (label, _) in DESIGNED.items()}
+DEFAULT_VOICE = "american_woman"
+SEED = 7  # one seed for every sentence: the designed voice stays the same person
 MAX_CHARS = 4000  # per make_voiceover call; about 4-5 minutes of speech
 CHUNK_CHARS = 600  # per TTS request, split at sentence ends
 
@@ -53,8 +75,16 @@ class VultrVoice:
         self.api_key, self.model, self.timeout = api_key, model, timeout
 
     def speak(self, text: str, voice: str) -> bytes:
+        fields: dict[str, object] = {"voice": voice}
+        if voice in DESIGNED:
+            fields = {
+                "voice": "design",
+                "instructions": DESIGNED[voice][1],
+                "language": "English",
+                "seed": SEED,
+            }
         body = json.dumps(
-            {"model": self.model, "input": text, "voice": voice, "response_format": "mp3"}
+            {"model": self.model, "input": text, "response_format": "mp3", **fields}
         ).encode()
         req = urllib.request.Request(
             self.url,
