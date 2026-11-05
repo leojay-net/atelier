@@ -24,8 +24,9 @@ from ninja import File, Form, NinjaAPI, Status
 from ninja.files import UploadedFile
 
 from atelier.agent.voice import ACCENTS, DEFAULT_VOICE, MY_VOICE, PASSAGE, PEOPLE, VOICES
-from atelier.api.core import accounts, services
+from atelier.api.core import accounts, edits, services
 from atelier.api.core.auth import ApiKeyAuth
+from atelier.api.core.edits import EditIn
 from atelier.api.core.models import Asset, Character, Job, Org, SavedRecipe
 from atelier.api.core.queue import enqueue
 from atelier.api.core.schemas import (
@@ -787,3 +788,92 @@ def hear_character(request: HttpRequest, character_id: int) -> HttpResponse:
     except VoiceError as e:
         raise ApiError(502, "voice_failed", str(e)) from None
     return HttpResponse(mp3, content_type="audio/mpeg")
+
+
+# -- hand edits (the editor) --------------------------------------------------------------------
+
+
+@api.post("/jobs/{job_id}/edit", response={202: dict[str, Any]})
+def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict[str, Any]]:
+    """Render the editor's changes to a video as the chat's next version. No model is used:
+    a typed voiceover is spoken and AI music composed first, then the edit runs as a spec."""
+    from atelier.agent.budget import Budget
+    from atelier.agent.config import AgentConfig
+    from atelier.agent.music import MusicError
+    from atelier.agent.tools import Toolbox
+    from atelier.agent.voice import VoiceError
+
+    org = _org(request)
+    parent = _job(request, job_id)
+    if not parent.finished:
+        raise ApiError(409, "parent_running", "wait for that version to finish, then edit it")
+    engine = services.engine_for(org)
+    source = _resolve(engine, body.source)
+    if source.media is not MediaType.VIDEO:
+        raise ApiError(422, "bad_request", "only videos can be edited here")
+    duration = float(engine.probe(source).get("duration") or 0.0)
+    try:
+        parts = edits.kept_parts(body, duration)
+    except ValueError as e:
+        raise ApiError(422, "bad_request", str(e)) from None
+    length = edits.Clock(parts, body.speed).length
+    services.check_rate(request.api_key)  # type: ignore[attr-defined]
+    services.check_quota(org)
+    made: list[tuple[str, str]] = []
+
+    voice_handle = None
+    if body.voiceover and body.voiceover.handle:
+        voice_handle = _resolve(engine, body.voiceover.handle).handle
+    elif body.voiceover and body.voiceover.text.strip():
+        voice_id = body.voiceover.voice or DEFAULT_VOICE
+        if voice_id not in VOICES and voice_id != MY_VOICE:
+            raise ApiError(422, "bad_request", f"unknown voice {voice_id!r}")
+        service = _service(settings.ATELIER_VOICE_CLIENT)
+        if service is None:
+            raise ApiError(503, "unavailable", "voiceovers are not available right now")
+        mine = org.my_voice or {}
+        if voice_id == MY_VOICE:
+            if not mine.get("handle") or not hasattr(service, "with_reference"):
+                raise ApiError(422, "bad_request", "record your voice in Settings first")
+            ref = engine.store.path(engine.store.resolve(mine["handle"]).hash).read_bytes()
+            service = service.with_reference(ref, str(mine.get("text") or ""))
+        box = Toolbox(engine, Budget(AgentConfig().limits), voice=service)
+        try:
+            info, _captions = box._speak(" ".join(body.voiceover.text.split()), voice_id)
+        except (VoiceError, OSError) as e:
+            raise ApiError(502, "voice_failed", f"the voiceover could not be made: {e}") from None
+        voice_handle = info.handle
+        made.append((info.handle, "voiceover.mp3"))
+
+    music_handle = None
+    if body.music and body.music.handle:
+        music_handle = _resolve(engine, body.music.handle).handle
+    elif body.music and body.music.compose.strip():
+        composer = _service(settings.ATELIER_MUSIC_CLIENT)
+        if composer is None:
+            raise ApiError(503, "unavailable", "AI music is not available right now")
+        try:
+            mp3 = composer.compose(body.music.compose.strip(), max(10, int(length) + 2), 100, 7)
+        except MusicError as e:
+            raise ApiError(502, "music_failed", f"the music could not be made: {e}") from None
+        info = engine.store.put_bytes(mp3, media=MediaType.AUDIO, ext=".mp3")
+        music_handle = info.handle
+        made.append((info.handle, "music.mp3"))
+
+    spec = edits.build_spec(body, duration, voice_handle, music_handle)
+    _validated(engine, spec)
+    job = Job.objects.create(
+        parent=parent,
+        org=org,
+        created_by=request.api_key,  # type: ignore[attr-defined]
+        kind="spec",
+        spec=spec,
+        prompt=edits.describe(body, parts, duration),
+        assets=[source.handle],
+        voice=parent.voice,
+    )
+    for handle, name in made:
+        services.register_asset(org, engine.store.resolve(handle), filename=name, origin=job)
+    enqueue(job)
+    job.refresh_from_db()
+    return Status(202, services.job_dict(job))

@@ -36,6 +36,7 @@ BUILTIN_MODULES = (
     "atelier.av.text_ops",
     "atelier.av.join_ops",
     "atelier.av.sfx_ops",
+    "atelier.av.edit_ops",
     "atelier.av.frame_ops",
     "atelier.av.audio_ops",
     "atelier.docs.doc_ops",

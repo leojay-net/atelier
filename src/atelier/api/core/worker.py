@@ -111,10 +111,13 @@ def _run_spec(job: Job, engine: Engine) -> Job:
     result = engine.run(job.spec)
     _register_outputs(job, engine, result)
     status = Job.SUCCEEDED if result.passed else Job.CHECKS_FAILED
+    body = services.summarize_result(result)
+    if job.parent_id is not None:  # a hand edit in a chat: say it is done, in plain words
+        body["summary"] = "Here's your edited version. It's saved as a new version in this chat."
     return _finish(
         job,
         status,
-        result=services.summarize_result(result),
+        result=body,
         compute_seconds=result.seconds,
     )
 
