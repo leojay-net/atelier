@@ -58,8 +58,10 @@ def _limit(p: ConcatParams, n: int) -> str | None:
     return None
 
 
-def _conform(g: Graph, clip: Stream, mode: str, size: tuple[int, int], fps: float) -> str:
-    """One clip's picture in the common frame size, frame rate and pixel format."""
+def _conform(g: Graph, clip: Stream, mode: str, size: tuple[int, int], fps: float | None) -> str:
+    """One clip's picture in the common frame size, frame rate and pixel format. With `fps`
+    None only the picture is shaped (a still for zoompan, which makes the frames itself: the
+    fps filter emits nothing for a lone frame on ffmpeg 7)."""
     assert clip.video is not None
     W, H = size
     v = clip.video
@@ -102,6 +104,8 @@ def _conform(g: Graph, clip: Stream, mode: str, size: tuple[int, int], fps: floa
             )
             (v,) = g.add("crop", {"w": W, "h": H}, ins=[v], prefix="v")
     (v,) = g.add("setsar", {"sar": 1}, ins=[v], prefix="v")
+    if fps is None:
+        return v
     # setpts first, fps after: `xfade` insists on a known constant frame rate, and on ffmpeg 7
     # a setpts behind the fps filter leaves the link's rate unset ("current rate of 1/0")
     (v,) = g.add("setpts", {"expr": "PTS-STARTPTS"}, ins=[v], prefix="v")
@@ -333,7 +337,7 @@ def slideshow(g: Graph, p: SlideshowParams) -> None:
         # one frame in, prepared at OVERSAMPLE x the frame; zoompan makes the moving shot
         g.sources[s.origin].opts = ("-f", "image2")
         big = (size[0] * OVERSAMPLE, size[1] * OVERSAMPLE)
-        v = _conform(g, s, p.mode, big, float(p.fps))
+        v = _conform(g, s, p.mode, big, None)
         move = AUTO_MOVES[k % len(AUTO_MOVES)] if p.motion == "auto" else p.motion
         pictures.append(_move(g, v, move, seconds, size, float(p.fps)))
     g.duration = _join(g, pictures, [], durations, p.fade)
@@ -499,9 +503,7 @@ def pip(g: Graph, p: PipParams) -> None:
     args: dict[str, Any] = {"x": x, "y": y}
     if p.start > 0 or p.end is not None:
         window = (
-            f"gte(t,{num(p.start)})"
-            if p.end is None
-            else f"between(t,{num(p.start)},{num(p.end)})"
+            f"gte(t,{num(p.start)})" if p.end is None else f"between(t,{num(p.start)},{num(p.end)})"
         )
         args["enable"] = window
 
