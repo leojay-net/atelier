@@ -283,6 +283,8 @@ def _move(g: Graph, v: str, move: str, seconds: float, size: tuple[int, int], fp
     )
     (v,) = g.add("setsar", {"sar": 1}, ins=[v], prefix="v")
     (v,) = g.add("setpts", {"expr": "PTS-STARTPTS"}, ins=[v], prefix="v")
+    # ffmpeg 7: setpts leaves the link's rate unset and xfade refuses "1/0"; fps restores it
+    (v,) = g.add("fps", {"fps": num(fps)}, ins=[v], prefix="v")
     (v,) = g.add("format", {"pix_fmts": "yuv420p"}, ins=[v], prefix="v")
     return v
 
