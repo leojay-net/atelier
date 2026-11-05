@@ -115,8 +115,117 @@ def test_chats_can_be_renamed_and_deleted_and_their_results_stay() -> None:
 
     assert other.delete(f"/conversations/{first['id']}").status_code == 404  # not theirs
     keep = api.post("/jobs", {"prompt": "another chat"}).json()
-    assert api.delete(f"/conversations/{first['id']}").json() == {"deleted": 2}
+    assert api.delete(f"/conversations/{first['id']}").json() == {"deleted": 2, "files_deleted": 0}
     assert [c["id"] for c in api.get("/conversations").json()["items"]] == [keep["id"]]
     created = api.get("/library", section="created").json()["items"]
     assert [c["title"] for c in created] == ["Holiday thumbnail"]  # the result stays
     assert api.patch(f"/conversations/{first['id']}", {"title": ""}).status_code == 422
+
+
+def test_deleting_a_chat_with_its_files_keeps_uploads_and_other_chats_files() -> None:
+    _, api = make_org("acme")
+    upload = api.upload("a.png", PHOTO).json()["handle"]
+    api_support.model = ScriptedModel(
+        message([tool_use("run_pipeline", {"spec": resize(upload)})], "tool_use"),
+        titled("Doomed"),
+        message(
+            [
+                tool_use(
+                    "run_pipeline",
+                    {
+                        "spec": resize(upload)
+                        | {
+                            "ops": [
+                                ["image.resize", {"width": 60}],
+                                ["export", {"preset": "web_jpeg"}],
+                            ]
+                        }
+                    },
+                )
+            ],
+            "tool_use",
+        ),
+        titled("Kept"),
+    )
+    doomed = api.post("/jobs", {"prompt": "small", "assets": [upload]}).json()
+    kept = api.post("/jobs", {"prompt": "smaller", "assets": [upload]}).json()
+    (gone,) = [o["handle"] for o in doomed["result"]["outputs"].values()]
+    out = api.delete(f"/conversations/{doomed['id']}?files=true").json()
+    assert out == {"deleted": 1, "files_deleted": 1}
+    assert api.get(f"/assets/{gone}").status_code == 404
+    lib = api.get("/library", section="created").json()["items"]
+    assert [i["title"] for i in lib] == ["Kept"]
+    assert api.get(f"/assets/{upload}").status_code == 200  # the upload stays
+    for o in kept["result"]["outputs"].values():
+        assert api.get(f"/assets/{o['handle']}").status_code == 200
+
+
+def tone_mp3(tmp: Path, seconds: float) -> bytes:
+    import subprocess
+
+    out = tmp / f"t{seconds}.webm"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=f=220:d={seconds}",
+         "-c:a", "libopus", str(out)],
+        check=True,
+    )  # fmt: skip
+    return out.read_bytes()
+
+
+def test_recording_my_voice(tmp_path: Path) -> None:
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    _, api = make_org("acme")
+
+    def record(data: bytes, consent: bool = True) -> Any:
+        return api.client.post(
+            "/api/v1/my-voice",
+            {"file": SimpleUploadedFile("me.webm", data), "consent": consent},
+            **api.headers,
+        )
+
+    assert api.get("/my-voice").json()["recorded"] is False
+    assert "quick brown fox" in api.get("/my-voice").json()["passage"]
+    assert record(tone_mp3(tmp_path, 8), consent=False).status_code == 422
+    assert record(tone_mp3(tmp_path, 2)).status_code == 422  # too short
+    assert api.post("/jobs", {"prompt": "x", "voice": "my_voice"}).status_code == 422
+    saved = record(tone_mp3(tmp_path, 40))
+    assert saved.status_code == 200 and saved.json()["recorded"] is True
+    assert saved.json()["seconds"] == 30.0  # kept to 30 s
+    audio = api.get("/my-voice/audio")
+    assert audio.status_code == 200 and audio["content-type"] == "audio/mpeg"
+    assert api.get("/voices").json()["mine"] is True
+    api_support.model = ScriptedModel(final("Ok", question="?"))
+    assert api.post("/jobs", {"prompt": "x", "voice": "my_voice"}).json()["voice"] == "my_voice"
+    assert api.delete("/my-voice").json() == {"recorded": False}
+    assert api.get("/voices").json()["mine"] is False
+
+
+def test_my_voice_is_cloned_from_the_recording_and_its_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, Any]] = []
+
+    class Resp:
+        def __enter__(self) -> Resp:
+            return self
+
+        def __exit__(self, *a: Any) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"mp3"
+
+    monkeypatch.setattr(
+        voice_mod.urllib.request,
+        "urlopen",
+        lambda req, timeout: sent.append(json.loads(req.data)) or Resp(),
+    )
+    plain = VultrVoice("https://v/v1", "k")
+    with pytest.raises(voice_mod.VoiceError, match="Settings"):
+        plain.speak("Hi.", "my_voice")
+    plain.with_reference(b"ME", "the words I read").speak("Hi.", "my_voice")
+    (body,) = sent
+    audio, words = body["input_references"]
+    assert body["voice"] == "clone" and audio["input_audio"] == {"data": "TUU=", "format": "mp3"}
+    assert words == {"type": "text", "text": "the words I read"}

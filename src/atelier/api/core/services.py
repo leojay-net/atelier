@@ -181,6 +181,26 @@ def thread_jobs(end: Job) -> list[Job]:
     return chain
 
 
+def delete_chat_files(org: Org, chain: list[Job]) -> int:
+    """Delete what the jobs in `chain` made: their results and the extras made or found for
+    them. Uploads are kept, and so is anything another chat still uses. Returns the count."""
+    ids = {j.pk for j in chain}
+    made = {h.removeprefix("asset:") for j in chain for h in output_handles(j)}
+    made |= set(Asset.objects.filter(org=org, origin_job__in=ids).values_list("hash", flat=True))
+    used = set()
+    for other in Job.objects.filter(org=org, chat_deleted=False).exclude(pk__in=ids):
+        used |= {h.removeprefix("asset:") for h in [*output_handles(other), *(other.assets or [])]}
+    mine = (org.my_voice or {}).get("handle", "").removeprefix("asset:")
+    doomed = list(  # an upload has no origin job: it is the user's own file, never deleted here
+        Asset.objects.filter(org=org, hash__in=made - used - {mine}, origin_job__isnull=False)
+    )
+    store = engine_for(org).store
+    for a in doomed:
+        store.path(a.hash).unlink(missing_ok=True)
+        a.delete()
+    return len(doomed)
+
+
 def thread_title(job: Job) -> str:
     """A conversation's name: the name the user gave it, else the newest AI title in it, else
     its first request."""

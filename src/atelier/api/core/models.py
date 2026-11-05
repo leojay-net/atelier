@@ -29,6 +29,8 @@ class Org(models.Model):
     monthly_compute_seconds_limit = models.FloatField(null=True, blank=True)
     max_upload_bytes = models.BigIntegerField(null=True, blank=True)  # null: the server default
     brand_kit = models.JSONField(default=dict, blank=True)
+    # the user's own recorded voice for voiceovers: {handle, text, created_at} (consented)
+    my_voice = models.JSONField(default=dict, blank=True)
 
     def __str__(self) -> str:
         return self.slug

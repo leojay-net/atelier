@@ -450,11 +450,16 @@ function Attachment({ item, onRemove }: { item: UploadItem; onRemove: () => void
  * choose (it matches the request, else an American woman). Kept for the rest of the chat. */
 function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [accents, setAccents] = useState<VoiceAccent[]>([]);
+  const [mine, setMine] = useState(false);
   useEffect(() => {
     let alive = true;
     fetch("/api/proxy/voices")
-      .then((r) => (r.ok ? r.json() : { accents: [] }))
-      .then((d: { accents: VoiceAccent[] }) => alive && setAccents(d.accents))
+      .then((r) => (r.ok ? r.json() : { accents: [], mine: false }))
+      .then((d: { accents: VoiceAccent[]; mine: boolean }) => {
+        if (!alive) return;
+        setAccents(d.accents);
+        setMine(d.mine);
+      })
       .catch(() => undefined);
     return () => {
       alive = false;
@@ -462,27 +467,35 @@ function VoicePicker({ value, onChange }: { value: string; onChange: (v: string)
   }, []);
   if (!accents.length) return null;
   return (
-    <label className="flex items-center gap-1.5 text-[12px] text-fg-secondary">
-      <Mic size={13} className="opacity-70" />
-      <span>Voice</span>
-      <select
-        aria-label="Voice for voiceovers"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-border bg-bg px-1.5 py-0.5 text-[12px] text-fg outline-none focus:border-accent"
-      >
-        <option value="">Let the AI choose</option>
-        {accents.map((a) => (
-          <optgroup key={a.id} label={a.label}>
-            {a.voices.map((v) => (
-              <option key={v.id} value={v.id}>
-                {a.label} {v.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </label>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-fg-secondary">
+      <label className="flex items-center gap-1.5">
+        <Mic size={13} className="opacity-70" />
+        <span>Voice</span>
+        <select
+          aria-label="Voice for voiceovers"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="rounded-md border border-border bg-bg px-1.5 py-0.5 text-[12px] text-fg outline-none focus:border-accent"
+        >
+          <option value="">Let the AI choose</option>
+          {mine ? <option value="my_voice">My voice</option> : null}
+          {accents.map((a) => (
+            <optgroup key={a.id} label={a.label}>
+              {a.voices.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {a.label} {v.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+      {!mine ? (
+        <a href="/settings" className="text-fg-tertiary underline-offset-2 hover:text-fg hover:underline">
+          Use your own voice
+        </a>
+      ) : null}
+    </div>
   );
 }
 

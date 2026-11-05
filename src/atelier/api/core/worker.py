@@ -30,7 +30,7 @@ from atelier.agent.loop import Job as AgentJob
 from atelier.agent.loop import run_job as run_agent
 from atelier.agent.plan_cache import PlanCache
 from atelier.agent.telemetry import Telemetry
-from atelier.agent.voice import VOICES, VoiceService
+from atelier.agent.voice import MY_VOICE, VOICES, VoiceService
 from atelier.api.core import services
 from atelier.api.core.models import Job
 from atelier.engine.engine import Engine
@@ -212,17 +212,34 @@ def fetch_links(job: Job, engine: Engine) -> tuple[str, list[str]]:
     return "Links in the message:\n" + "\n".join(notes), handles
 
 
+def _voice_for(job: Job, engine: Engine) -> VoiceService | None:
+    """The voice service, able to speak in the user's own voice when they recorded one."""
+    service = _voice_factory()()
+    mine = job.org.my_voice or {}
+    if service is not None and mine.get("handle") and hasattr(service, "with_reference"):
+        try:
+            mp3 = engine.store.path(engine.store.resolve(mine["handle"]).hash).read_bytes()
+        except Exception:  # the recording is gone; the other voices still work
+            return service
+        service = service.with_reference(mp3, str(mine.get("text") or ""))
+    return service
+
+
 def _run_prompt(job: Job, engine: Engine) -> Job:
     context, earlier = followup_context(job)
     link_note, linked = fetch_links(job, engine)
     prompt = f"{context}\n\nNow: {job.prompt}" if context else job.prompt
     if link_note:
         prompt = f"{prompt}\n\n{link_note}"
-    if job.voice in VOICES:
+    mine = job.org.my_voice or {}
+    if job.voice in VOICES or (job.voice == MY_VOICE and mine):
+        label = "the user's own recorded voice" if job.voice == MY_VOICE else VOICES[job.voice]
         prompt += (
-            f"\n\nVoice for any voiceover: {VOICES[job.voice]} (voice {job.voice}); "
+            f"\n\nVoice for any voiceover: {label} (voice {job.voice}); "
             "the user chose it, so use it unless they ask for another."
         )
+    elif mine:
+        prompt += "\n\nThe user has recorded their own voice: voice my_voice if they ask for it."
     kit = brand_kit_text(job)
     handles = list(dict.fromkeys([*job.assets, *linked, *earlier]))[:20]  # new files first
     if kit:
@@ -240,7 +257,7 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
         config=AgentConfig(model=settings.ATELIER_MODEL_NAME or DEFAULT_MODEL),
         telemetry=telemetry,
         plan_cache=PlanCache(engine.home / "plans"),
-        voice=_voice_factory()(),
+        voice=_voice_for(job, engine),
         pictures=_factory(settings.ATELIER_PICTURES_CLIENT)(),
         music=_factory(settings.ATELIER_MUSIC_CLIENT)(),
     )

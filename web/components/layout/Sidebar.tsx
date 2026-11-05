@@ -19,6 +19,7 @@ import {
 import clsx from "clsx";
 import { logout } from "@/app/(auth)/actions";
 import type { Conversation } from "@/lib/types";
+import { DeleteChatChoice, deleteChat, renameChat } from "@/components/chats/chatActions";
 
 /** Studio and sidebar talk through these window events (the studio keeps its own URL). */
 export const NEW_CHAT_EVENT = "atelier:new-chat";
@@ -60,28 +61,23 @@ function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: bool
     const title = name.trim();
     if (!title || title === chat.title) return setMode("idle");
     setBusy(true);
-    const r = await fetch(`/api/proxy/conversations/${chat.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title }),
-    }).catch(() => null);
+    const err = await renameChat(chat.id, title);
     setBusy(false);
-    if (!r?.ok) return setError("Couldn't rename it. Try again.");
+    if (err) return setError(err);
     setMode("idle");
     onChanged();
   }
 
-  async function remove() {
-    setBusy(true);
-    const r = await fetch(`/api/proxy/conversations/${chat.id}`, { method: "DELETE" }).catch(() => null);
-    setBusy(false);
-    if (!r?.ok) return setError("Couldn't delete it. Try again.");
+  async function remove(files: boolean): Promise<string> {
+    const err = await deleteChat(chat.id, files);
+    if (err) return err;
     setMode("idle");
     onChanged();
     if (active) {
       window.dispatchEvent(new Event(NEW_CHAT_EVENT));
       router.push("/");
     }
+    return "";
   }
 
   if (mode === "rename")
@@ -157,29 +153,8 @@ function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: bool
         </div>
       )}
       {mode === "confirm" && (
-        <div className="absolute right-1 top-8 z-20 w-52 rounded-md border border-border bg-bg p-3 shadow-lg">
-          <p className="text-[13px] font-medium text-fg">Delete this chat?</p>
-          <p className="mt-1 text-[12px] text-fg-secondary">
-            It leaves your chat list. Anything it made stays in your Library.
-          </p>
-          {error && <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
-          <div className="mt-2.5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setMode("idle")}
-              className="rounded-sm px-2 py-1 text-[12px] text-fg-secondary hover:bg-bg-inset"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={remove}
-              className="rounded-sm bg-red-600 hover:bg-red-700 px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-60"
-            >
-              {busy ? "Deleting…" : "Delete"}
-            </button>
-          </div>
+        <div className="absolute right-1 top-8 z-20 w-60 rounded-md border border-border bg-bg p-3 shadow-lg">
+          <DeleteChatChoice onDelete={remove} onCancel={() => setMode("idle")} />
         </div>
       )}
     </div>
