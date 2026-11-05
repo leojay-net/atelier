@@ -5,6 +5,7 @@
 #   * base image: pin by digest before the first release (tag alone can move)
 #   * system packages (ffmpeg 7.x, LibreOffice, qpdf…): installed from a fixed
 #     snapshot.debian.org date, so `apt-get install` resolves to the same versions forever
+#     (falls back to deb.debian.org if the snapshot service is down; see the RUN below)
 #   * Python deps: uv.lock, installed with --frozen
 #   * fonts: ops accept only the bundled pack in assets/fonts (system fonts are ignored)
 #
@@ -24,12 +25,25 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_LINK_MODE=copy \
     ATELIER_REFERENCE_PLATFORM=1
 
-RUN rm -f /etc/apt/sources.list.d/debian.sources \
+# snapshot.debian.org is sometimes down for hours (504s). apt-get update only warns on a failed
+# fetch, so --error-on=any makes it fail; after three tries the build falls back to the regular
+# mirror (same release, newer point versions), says so loudly, and leaves a marker in the image.
+RUN set -eu \
+ && mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
  && printf '%s\n' \
     "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} trixie main" \
     "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} trixie-security main" \
     > /etc/apt/sources.list \
- && apt-get update \
+ && ok=0; for i in 1 2 3; do \
+      if apt-get -o Acquire::Retries=3 update --error-on=any; then ok=1; break; fi; sleep 15; \
+    done \
+ && if [ "$ok" = 0 ]; then \
+      echo "WARNING: snapshot.debian.org unavailable; using deb.debian.org (packages not pinned)"; \
+      : > /etc/apt/sources.list; mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources; \
+      echo "deb.debian.org" > /etc/atelier-apt-fallback; \
+      apt-get -o Acquire::Retries=3 update; \
+    fi \
+ && rm -f /tmp/debian.sources \
  && apt-get install -y --no-install-recommends \
       ffmpeg \
       libreoffice-core-nogui libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
