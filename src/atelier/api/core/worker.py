@@ -236,6 +236,7 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
         plan_cache=PlanCache(engine.home / "plans"),
         voice=_voice_factory()(),
         pictures=_factory(settings.ATELIER_PICTURES_CLIENT)(),
+        music=_factory(settings.ATELIER_MUSIC_CLIENT)(),
     )
     for handle, name in res.generated:  # voiceovers, found and made pictures: the user's too
         services.register_asset(job.org, engine.store.resolve(handle), filename=name, origin=job)

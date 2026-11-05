@@ -160,7 +160,7 @@ def test_shapes_and_sizes(engine: Engine, pictures: dict[str, str]) -> None:
 def test_slideshow_validation(engine: Engine, pictures: dict[str, str]) -> None:
     with pytest.raises(SpecInvalid, match=r"video.slideshow takes 2\+ input\(s\), got 1"):
         engine.validate(slideshow(pictures, ["red"]))
-    with pytest.raises(SpecInvalid, match="must be less than half of seconds"):
+    with pytest.raises(SpecInvalid, match="must be under half of the shortest picture"):
         engine.validate(slideshow(pictures, ["red", "green"], seconds=1.0, fade=0.5))
     clip = engine.store.put_file(AV / "clip_landscape.mp4").handle
     with pytest.raises(SpecInvalid, match="must be image"):

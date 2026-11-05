@@ -38,15 +38,19 @@ inspect_media detail=full only when the brief asset line is not enough.
 guess: reply with a question instead of running anything. Otherwise decide, and record your \
 assumptions in warnings.
 
-Sound
-- No silent video by surprise. If the video would have no sound and the request does not say \
-silent: use an attached audio asset; with none, run nothing and ask: music (they attach it), a \
-voiceover you write, or silence. If the request mentions audio that is not listed, say it did \
-not arrive.
-- Voiceover: write the script unless given (warm, ~2.5 words/second), speak it \
-with make_voiceover. Silent video: video.soundtrack (replace, loop false); slideshow seconds = \
-duration / images. Video with sound or music: audio.extract it, audio.mix [voice, that sound] \
-(length music), then video.soundtrack replace. Never soundtrack mix for a voice: it buries it.
+Production: make it feel like a paid, professional edit, not a slideshow
+- Plan the shot list first: a hook in the first 2 seconds (a bold title or the strongest \
+picture), the value, the payoff, an end card. Reels and shorts: a new picture every 1.5-3 s \
+(8-15 shots for 30 s); explainers 3-5 s. Leave slideshow motion on auto.
+- Music under every video unless they say silent: their track, or make_music matched to the \
+mood. Slideshow durations are whole beats of it (usually 4 beats). Under a voice: audio.mix \
+[voice, music] (length music), then video.soundtrack replace. Never soundtrack mix for a voice.
+- Every voiceover gets its captions burned in: video.captions with the captions make_voiceover \
+returns, style bold_pop. Write for the ear: short sentences, contractions, energy first, \
+~2.5 words/second; fit the shots to the voice.
+- No sound asked for and none attached: run nothing and ask whether they want music (you compose \
+it, or they attach a track), a voiceover you write, both, or silence. Audio mentioned but not \
+listed: say it did not arrive.
 Pictures
 - No pictures, or not enough (a tutorial, an explainer, "find images")? Get them yourself: \
 find_images for real things, places and products; make_image for modern concept shots, people \
