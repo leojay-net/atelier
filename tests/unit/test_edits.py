@@ -261,3 +261,27 @@ def test_voiceover_and_music_are_made_ahead_to_hear_in_the_preview(settings: Any
 
 def composer() -> FakeComposer:
     return FakeComposer()
+
+
+def test_videos_can_be_seeked_byte_ranges() -> None:
+    """Live: the editor's playhead snapped back to 0 because the file came whole (no ranges)."""
+    _, api = make_org("acme")
+    clip = api.upload("clip.mp4", CLIP.read_bytes()).json()["handle"]
+    data = CLIP.read_bytes()
+    whole = api.client.get(f"/api/v1/assets/{clip}/content", **api.headers)
+    assert whole.status_code == 200 and whole["Accept-Ranges"] == "bytes"
+    part = api.client.get(
+        f"/api/v1/assets/{clip}/content", HTTP_RANGE="bytes=100-199", **api.headers
+    )
+    assert part.status_code == 206 and part["Content-Range"] == f"bytes 100-199/{len(data)}"
+    assert b"".join(part.streaming_content) == data[100:200]
+    tail = api.client.get(f"/api/v1/assets/{clip}/content", HTTP_RANGE="bytes=-10", **api.headers)
+    assert b"".join(tail.streaming_content) == data[-10:]
+    rest = api.client.get(
+        f"/api/v1/assets/{clip}/content", HTTP_RANGE=f"bytes={len(data) - 5}-", **api.headers
+    )
+    assert b"".join(rest.streaming_content) == data[-5:]
+    bad = api.client.get(
+        f"/api/v1/assets/{clip}/content", HTTP_RANGE=f"bytes={len(data) + 5}-", **api.headers
+    )
+    assert bad.status_code == 416

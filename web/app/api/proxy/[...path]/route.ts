@@ -25,6 +25,9 @@ async function forward(req: NextRequest, segments: string[]): Promise<Response> 
   const headers = new Headers();
   const contentType = req.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
+  // seeking in a video or audio file (the player, the editor's playhead) asks for a byte range
+  const range = req.headers.get("range");
+  if (range) headers.set("range", range);
   headers.set("Authorization", `Bearer ${token}`);
 
   const hasBody = !["GET", "HEAD"].includes(req.method);
