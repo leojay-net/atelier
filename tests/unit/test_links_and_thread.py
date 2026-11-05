@@ -12,7 +12,7 @@ import pytest
 from test_api import make_org
 
 import api_support
-from atelier.api.core import links
+from atelier import links
 from conftest import FIXTURES
 from harness.fake_model import ScriptedModel, final
 

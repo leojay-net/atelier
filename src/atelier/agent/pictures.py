@@ -187,7 +187,7 @@ class OpenverseAndVultr:
         import tempfile
         from pathlib import Path
 
-        from atelier.api.core.links import LinkError, fetch
+        from atelier.links import LinkError, fetch
 
         with tempfile.TemporaryDirectory() as tmp:
             try:
@@ -215,7 +215,14 @@ class OpenverseAndVultr:
                 "Content-Type": "application/json",
             },
         )
-        data = (_get_json(req, 180).get("data") or [{}])[0]
+        for wait in (4, 8, 16, None):  # the service rate-limits bursts (429); back off and retry
+            try:
+                data = (_get_json(req, 180).get("data") or [{}])[0]
+                break
+            except PictureError as e:
+                if wait is None or " 429" not in str(e):
+                    raise
+                time.sleep(wait)
         if data.get("b64_json"):
             import base64
 

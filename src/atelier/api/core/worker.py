@@ -22,6 +22,7 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
+from atelier import links
 from atelier.agent.client import MissingCredentials
 from atelier.agent.config import DEFAULT_MODEL, AgentConfig
 from atelier.agent.loop import AgentResult
@@ -30,7 +31,7 @@ from atelier.agent.loop import run_job as run_agent
 from atelier.agent.plan_cache import PlanCache
 from atelier.agent.telemetry import Telemetry
 from atelier.agent.voice import VoiceService
-from atelier.api.core import links, services
+from atelier.api.core import services
 from atelier.api.core.models import Job
 from atelier.engine.engine import Engine
 from atelier.engine.runner import JobResult, RunCancelled, StepFailed

@@ -7,11 +7,12 @@ precise paths, and returns a CanonicalSpec. Nothing runs until this succeeds.
 from __future__ import annotations
 
 import re
+import typing
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from atelier.canonical import round_floats
 from atelier.fmt import short_repr
@@ -412,7 +413,16 @@ class _Validator:
                     p = f"{p}[{x}]" if isinstance(x, int) else join_path(p, x)
                 name = loc[0] if loc and isinstance(loc[0], str) else None
                 kind = d["type"]
-                if kind == "extra_forbidden":
+                if kind == "extra_forbidden" and len(loc) > 1:  # inside a nested item
+                    inner = _nested_fields(fields, loc)
+                    self.err(
+                        p,
+                        "unknown_arg",
+                        f"{opdef.name}: {name} items have no field {loc[-1]!r}",
+                        inner,
+                        closest(str(loc[-1]), inner),
+                    )
+                elif kind == "extra_forbidden":
                     names = sorted(public)
                     self.err(
                         p,
@@ -576,3 +586,21 @@ class _Validator:
                     "unused_step",
                     f"step {s.id!r} does not feed any output; add it to outputs or remove it",
                 )
+
+
+def _model_in(ann: Any) -> Any:
+    """The pydantic model inside an annotation like list[Hit] or Hit | None, else None."""
+    while ann is not None and not (isinstance(ann, type) and issubclass(ann, BaseModel)):
+        args = [a for a in typing.get_args(ann) if a is not type(None)]
+        ann = args[0] if args else None
+    return ann
+
+
+def _nested_fields(fields: dict[str, Any], loc: tuple[Any, ...]) -> list[str]:
+    """The field names of the nested model an error at `loc` sits in (e.g. hits[0].sound)."""
+    model = _model_in(fields[loc[0]].annotation) if loc[0] in fields else None
+    for part in loc[1:-1]:
+        if model is not None and isinstance(part, str):
+            sub = model.model_fields.get(part)
+            model = _model_in(sub.annotation) if sub else None
+    return sorted(model.model_fields) if model is not None else []

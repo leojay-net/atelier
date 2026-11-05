@@ -87,6 +87,11 @@ class TextParams(TextLook):
 
 
 class CaptionsParams(TextLook):
+    position: Position | Literal["auto"] = Field(
+        "auto",
+        description="auto: bottom on landscape/square (clear of on-screen text), lower_safe on "
+        "portrait (clear of app buttons); or top|upper_safe|middle|lower_safe|bottom",
+    )
     shift: float = Field(
         0.0, ge=-60, le=60, description="seconds added to every cue (negative: earlier)"
     )
@@ -244,7 +249,7 @@ def _timed(cues: list[Cue], shift: float, total: float | None) -> list[Cue]:
 
 @video_op(
     name="video.captions",
-    version="1.1.0",
+    version="1.2.0",
     params=CaptionsParams,
     inputs=(MediaType.VIDEO, MediaType.TEXT),
     description="burn in captions from an SRT/WebVTT file (second input)",
@@ -265,6 +270,8 @@ def captions(g: Graph, p: CaptionsParams) -> None:
             "trim the video first, or split the file"
         )
     frame = (g.width, g.height)
+    if p.position == "auto":  # live: lower_safe sat on a landscape slide's own text
+        p = p.model_copy(update={"position": "lower_safe" if g.height > g.width else "bottom"})
     box, _ = POSITIONS[p.position]
     style = _style(p, frame)
     drawn = []

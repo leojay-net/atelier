@@ -252,3 +252,49 @@ def test_sound_effects_land_on_their_times_and_nothing_else_plays(tmp_path: Path
     assert peak(0.0, 0.15) > 0.02  # the pop
     assert peak(1.2, 1.6) > 0.02  # the whoosh swelling into the cut
     assert peak(2.2, 2.9) < 0.001  # silence after it
+
+
+def test_sfx_accepts_the_names_the_ai_writes_and_explains_wrong_ones(tmp_path: Path) -> None:
+    """Live: {"time": .., "sound": ..} was refused with "video.sfx has no arg 'hits'"."""
+    engine = Engine.open(tmp_path / "store")
+    pic = engine.store.put_file(FIXTURES / "photo.png").handle
+
+    def spec(hit: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "inputs": {"a": pic, "b": pic},
+            "steps": [
+                {"id": "s", "op": "video.slideshow", "in": ["a", "b"], "args": {}},
+                {"id": "x", "op": "video.sfx", "in": "s", "args": {"hits": [hit]}},
+            ],
+            "outputs": ["x"],
+        }
+
+    plan = engine.validate(spec({"time": 1.5, "sound": "pop"}))
+    assert plan.steps[1].args["hits"] == [{"at": 1.5, "kind": "pop"}]
+    with pytest.raises(SpecInvalid) as err:
+        engine.validate(spec({"at": 1.5, "noise": "pop"}))
+    text = str(err.value)
+    assert "hits items have no field 'noise'" in text and "kind" in text
+
+
+def test_captions_sit_at_the_bottom_of_a_landscape_video(tmp_path: Path) -> None:
+    """Live: at lower_safe they covered a tutorial slide's own text."""
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(FIXTURES / "av" / "clip_silent.mp4").handle
+    caps = engine.store.put_bytes(b"1\n00:00:00,000 --> 00:00:05,000\nHELLO THERE\n").handle
+    result = engine.run(
+        {
+            "version": 1,
+            "inputs": {"v": clip, "c": caps},
+            "steps": [
+                {"id": "t", "op": "video.captions", "in": ["v", "c"], "args": {"animate": "none"}},
+                {"id": "out", "op": "export", "in": "t", "args": {"preset": "web_h264"}},
+            ],
+            "outputs": ["out"],
+        }
+    )
+    plain = frames(FIXTURES / "av" / "clip_silent.mp4", [1.0])[0]
+    drawn = frames(engine.store.path(result.outputs["out"].hash), [1.0])[0]
+    rows = np.abs(drawn - plain).mean(axis=1)  # per row of the 90-row thumbnail
+    assert rows[:60].max() < 4 < rows[60:].max()  # all the text is in the bottom third

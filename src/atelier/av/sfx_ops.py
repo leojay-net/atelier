@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from atelier.av.graph import Graph, num
 from atelier.av.ops import video_op
@@ -23,9 +23,18 @@ PEAK = {"whoosh": 0.35, "pop": 0.0, "riser": 1.2, "impact": 0.0}  # seconds into
 
 
 class Hit(BaseModel):
+    # The model often writes {"time": 2.4, "sound": "whoosh"} (live 2026-11-05); those names
+    # are accepted as they are unambiguous, and the canonical form is always {at, kind}.
     model_config = ConfigDict(extra="forbid", frozen=True)
-    at: Timecode = Field(description="when it lands (seconds): a cut, a title appearing")
-    kind: Kind = Field("whoosh", description="whoosh | pop | riser | impact")
+    at: Timecode = Field(
+        description="when it lands (seconds): a cut, a title appearing",
+        validation_alias=AliasChoices("at", "time", "t", "start"),
+    )
+    kind: Kind = Field(
+        "whoosh",
+        description="whoosh | pop | riser | impact",
+        validation_alias=AliasChoices("kind", "sound", "type", "effect"),
+    )
 
 
 class SfxParams(Params):
