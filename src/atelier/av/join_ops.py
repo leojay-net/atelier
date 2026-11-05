@@ -264,8 +264,26 @@ def _ease(frames: int) -> str:
     return f"({p}*{p}*(3-2*{p}))"
 
 
-def _move(g: Graph, v: str, move: str, seconds: float, size: tuple[int, int], fps: float) -> str:
-    z0, z1, x0, x1, y0, y1 = MOVES[move]
+def _text_safe(boxes: list[dict[str, Any]]) -> tuple[float, ...] | None:
+    """A centered push-in gentle enough that text drawn on the picture never leaves the frame
+    (live: pans and 12 % zooms cut a tutorial slide's edge-hugging text). None: no text."""
+    edges = [
+        min(x, y, 1 - x - w, 1 - y - h)
+        for b in boxes
+        for x, y, w, h in [tuple(float(c) for c in b["box"])]
+    ]
+    if not edges:
+        return None
+    margin = max(0.0, min(edges)) * 0.6  # the crop uses 60 %: the text keeps some air
+    zoom = min(MOVES["push_in"][1], 1 / max(0.5, 1 - 2 * margin))
+    return (1.0, round(zoom, 4), 0.5, 0.5, 0.5, 0.5)
+
+
+def _move(
+    g: Graph, v: str, move: str | tuple[float, ...], seconds: float, size: tuple[int, int],
+    fps: float,
+) -> str:  # fmt: skip
+    z0, z1, x0, x1, y0, y1 = MOVES[move] if isinstance(move, str) else move
     frames = max(1, round(seconds * fps))
     e = _ease(frames)
     (v,) = g.add(
@@ -310,7 +328,7 @@ def _frame_size(shape: str, short: int) -> tuple[int, int]:
 
 @video_op(
     name="video.slideshow",
-    version="1.2.0",
+    version="1.3.0",
     params=SlideshowParams,
     inputs=(MediaType.IMAGE, MediaType.IMAGE),
     variadic=True,
@@ -322,7 +340,8 @@ def slideshow(g: Graph, p: SlideshowParams) -> None:
     e.g. whole beats of the music), in a frame of the chosen shape. Pictures of another shape
     are shown whole over a blurred copy (`blur`), fitted with bars (`fit`) or cropped (`fill`).
     `motion` gives every picture a slow, eased camera move (push in/out, pans); `auto` varies
-    them from picture to picture, `none` keeps them still. The video has no sound: add music
+    them from picture to picture (a picture with text on it gets a gentle centered push that
+    keeps the text in frame), `none` keeps them still. The video has no sound: add music
     with `video.soundtrack`."""
     stills = [g.snapshot(), *(g.extra_stream(k) for k in range(g.extra_count))]
     size = _frame_size(p.shape, p.short_side)
@@ -340,7 +359,12 @@ def slideshow(g: Graph, p: SlideshowParams) -> None:
         g.sources[s.origin].opts = ("-f", "image2")
         big = (size[0] * OVERSAMPLE, size[1] * OVERSAMPLE)
         v = _conform(g, s, p.mode, big, None)
-        move = AUTO_MOVES[k % len(AUTO_MOVES)] if p.motion == "auto" else p.motion
+        move: str | tuple[float, ...] = (
+            AUTO_MOVES[k % len(AUTO_MOVES)] if p.motion == "auto" else p.motion
+        )
+        safe = _text_safe(g.sources[s.origin].meta.get("boxes") or [])
+        if safe is not None and p.motion == "auto":
+            move = safe
         pictures.append(_move(g, v, move, seconds, size, float(p.fps)))
     g.duration = _join(g, pictures, [], durations, p.fade)
     g.width, g.height, g.fps = size[0], size[1], float(p.fps)
