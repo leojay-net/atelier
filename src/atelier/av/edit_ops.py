@@ -68,10 +68,18 @@ def layers(g: Graph, p: LayersParams) -> None:
         (base,) = g.add("apad", {"whole_dur": num(total)}, ins=[base], prefix="a")
         (base,) = g.add("atrim", {"end": num(total)}, ins=[base], prefix="a")
     tracks = [base]
-    for k, layer in enumerate(p.layers):
-        if layer.start >= total or layer.volume == 0:
-            continue
-        (a,) = g.add("aformat", fmt, ins=[g.extra_audio_label(k)], prefix="a")
+    wanted = [k for k, layer in enumerate(p.layers) if layer.start < total and layer.volume > 0]
+    # the same file on two tracks (one song as voice and music) is one ffmpeg input: split it
+    labels = {k: g.extra_audio_label(k) for k in wanted}
+    copies: dict[str, list[str]] = {}
+    for label in set(labels.values()):
+        n = sum(1 for v in labels.values() if v == label)
+        copies[label] = (
+            g.add("asplit", {"outputs": n}, ins=[label], outs=n, prefix="a") if n > 1 else [label]
+        )
+    for k in wanted:
+        layer = p.layers[k]
+        (a,) = g.add("aformat", fmt, ins=[copies[labels[k]].pop()], prefix="a")
         if layer.loop:
             length = g.extra_stream(k).duration or total
             (a,) = g.add(
