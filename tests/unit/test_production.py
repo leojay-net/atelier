@@ -307,3 +307,38 @@ def test_tools_start_with_small_thread_stacks() -> None:
 
     out = binaries.run(["sh", "-c", "ulimit -s"], timeout=10)
     assert out.stdout.decode().strip() == "2048"
+
+
+def test_a_moving_slide_keeps_its_text_in_frame(tmp_path: Path) -> None:
+    """Live: a tutorial slide's text near the edge ("Python does all three") was cut by the
+    camera move. A picture with text gets a gentle centered push that keeps it in frame."""
+    from PIL import Image
+
+    Image.new("RGB", (1280, 720), (20, 30, 60)).save(tmp_path / "bg.png")
+    engine = Engine.open(tmp_path / "store")
+    bg = engine.store.put_file(tmp_path / "bg.png").handle
+    result = engine.run(
+        {
+            "version": 1,
+            "inputs": {"a": bg},
+            "steps": [
+                {
+                    "id": "t",
+                    "op": "image.text",
+                    "in": "a",
+                    "args": {"text": "IIIIIIII", "box": [0.06, 0.4, 0.4, 0.2], "align": "left"},
+                },
+                {
+                    "id": "s",
+                    "op": "video.slideshow",
+                    "in": ["a", "t"],  # second: the old auto move there was a pan
+                    "args": {"shape": "landscape", "short_side": 360, "durations": [1.0, 2.0]},
+                },
+                {"id": "out", "op": "export", "in": "s", "args": {"preset": "web_h264"}},
+            ],
+            "outputs": ["out"],
+        }
+    )
+    last = frames(engine.store.path(result.outputs["out"].hash), [2.9])[0]  # end of the move
+    assert last[:, :2].max() < 120  # nothing bright at the left edge: the text was not cut
+    assert last[:, 2:80].max() > 180  # and it is still on screen

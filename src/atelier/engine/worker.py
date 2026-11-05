@@ -103,7 +103,8 @@ def _prepare_source(spec: dict[str, Any], work: Path, index: int) -> Any:
         im = load(Artifact(path, media, ext, meta))
         clean = work / f"source{index}.png"
         im.save(clean, "PNG")
-        return Source(clean, media, ".png", {"size": [im.width, im.height]})
+        boxes = [b for b in meta.get("boxes", []) if isinstance(b, dict) and "box" in b]
+        return Source(clean, media, ".png", {"size": [im.width, im.height], "boxes": boxes})
     if media is MediaType.TEXT:
         return Source(path, media, ext, {})  # read by an op (captions); never given to ffmpeg
     if "video" not in meta and "audio" not in meta:

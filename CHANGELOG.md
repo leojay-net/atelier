@@ -13,6 +13,11 @@ an entry below (enforced by `tests/golden/test_golden.py`).
 - Step sandbox: `MALLOC_ARENA_MAX=2`, so fused renders stop hitting the 4 GB address-space cap
   through glibc's per-thread arenas (a 10-shot portrait reel with captions failed in export).
 - `make_image` waits and retries when the image service rate-limits (429).
+- `video.slideshow` 1.2.0 → 1.3.0: with `motion: auto`, a picture with text on it (layout boxes
+  from `image.text`) gets a gentle centered push sized to keep the text in frame, instead of a
+  pan or a 12 % zoom that cut edge-hugging text (tutorial slides, live).
+- Tools (ffmpeg) start with 2 MB thread stacks: a 66 s captioned tutorial (275 threads)
+  reserved 3.85 GB of the 4 GB step cap in 8 MB stacks and failed; now 2.4 GB.
 
 ### Production quality, day 2 (2026-11-05, docs/14)
 - `video.text`, `video.captions`, `video.lower_third` 1.0.2 → 1.1.0: `animate` (default `auto`):
