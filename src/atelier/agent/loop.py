@@ -218,6 +218,10 @@ def _run(
                 "tools",
                 {"names": turn.tool_calls, "details": [_call_detail(call) for call in uses]},
             )
+            for call, outcome in results:  # what went wrong, for the activity feed and debugging
+                if outcome.is_error:
+                    text = outcome.content if isinstance(outcome.content, str) else ""
+                    engine.observer("tool_error", {"name": call.name, "text": text[:600]})
         if budget.hard_exhausted:
             return finish("budget")
         notice = budget.notice() if budget.soft_exhausted else ""

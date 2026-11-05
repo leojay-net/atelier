@@ -133,6 +133,9 @@ export function activityLines(events: JobEvent[], finished: boolean): ActivityLi
         });
         break;
       }
+      case "tool_error":
+        lines.push({ key: `e${e.seq}`, text: "Fixing a problem and trying again", detail: `${str(d.name)} · ${str(d.text).slice(0, 160)}`, state: "done" });
+        break;
       case "step_start": {
         const op = str(d.op);
         const ops = Array.isArray(d.ops) ? (d.ops as string[]) : [op];
