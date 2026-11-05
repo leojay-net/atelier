@@ -3,7 +3,7 @@ in one place and does not depend on the ORM."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ninja import Schema
 from pydantic import Field
@@ -61,3 +61,17 @@ class SignupIn(Schema):
 class LoginIn(Schema):
     email: str = Field(max_length=254)
     password: str = Field(max_length=256)
+
+
+class CharacterIn(Schema):
+    name: str = Field(min_length=1, max_length=60)
+    kind: Literal["character", "place"] = "character"
+    look: str = Field(min_length=3, max_length=1200)
+    voice: str = Field("", max_length=400)
+
+
+class CharacterEdit(Schema):
+    name: str | None = Field(None, min_length=1, max_length=60)
+    look: str | None = Field(None, min_length=3, max_length=1200)
+    voice: str | None = Field(None, max_length=400)
+    redesign: bool = False  # draw a new design picture (also done when the look changes)

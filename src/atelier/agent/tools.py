@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -24,7 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from atelier.agent.animation import STYLE as ANIMATION_STYLE
+from atelier.agent.animation import AnimationError, AnimationService
 from atelier.agent.budget import Budget
+from atelier.agent.cast import Cast, CastMember, design_prompt
 from atelier.agent.music import MusicError, MusicService
 from atelier.agent.pictures import PictureError, PictureService
 from atelier.agent.voice import (
@@ -54,6 +58,8 @@ MAX_ASSETS_PER_CALL = 20
 MAX_NAMES_PER_CALL = 12
 MAX_VOICEOVERS = 4  # per job
 MAX_FOUND = 12  # pictures found per job
+MAX_CHARACTERS = 8  # cast members designed per request
+MAX_ANIMATION_SECONDS = 90  # animated seconds per request (billed per second)
 MAX_MADE = 12  # pictures generated per job (a 30 s reel needs 8-15 shots)
 MAX_MUSIC = 2  # tracks composed per job
 
@@ -113,6 +119,47 @@ TOOLS: list[dict[str, Any]] = sorted(
                     "shape": {"type": "string", "enum": ["landscape", "portrait", "square"]},
                 },
                 "required": ["query", "count", "shape"],
+            },
+            strict=True,
+        ),
+        _tool(
+            "make_character",
+            "Design a member of an animated series' cast: a character (a person, animal, robot…) "
+            "or a place (a setting the scenes happen in). Makes its design picture in one "
+            "animation style and saves it to the user's cast, so every scene and every later "
+            "part of the series reuses the same look. look: a full visual description (age, "
+            "body, face, hair, clothes and colors, or the place's features). voice: how the "
+            "character sounds, for their lines (age, gender, accent, energy); empty for a place. "
+            "The same name again redesigns it.",
+            {
+                "properties": {
+                    "name": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["character", "place"]},
+                    "look": {"type": "string"},
+                    "voice": {"type": "string"},
+                },
+                "required": ["name", "kind", "look", "voice"],
+            },
+            strict=True,
+        ),
+        _tool(
+            "animate",
+            "Animate one scene (4-15 s) with members of the cast, by name: their design pictures "
+            "keep them looking the same. scene: what happens, who does what, the camera and the "
+            "mood, in the present tense. Optional line: the words one character (speaker) says; "
+            "it is spoken in that character's voice and their mouth moves with it (empty "
+            "speaker and line for none). Returns a video clip with the line as its sound "
+            f"(silent otherwise). At most {MAX_ANIMATION_SECONDS} animated seconds per request.",
+            {
+                "properties": {
+                    "scene": {"type": "string"},
+                    "cast": _STRING_LIST,
+                    "seconds": {"type": "integer"},
+                    "shape": {"type": "string", "enum": ["landscape", "portrait", "square"]},
+                    "speaker": {"type": "string"},
+                    "line": {"type": "string"},
+                },
+                "required": ["scene", "cast", "seconds", "shape", "speaker", "line"],
             },
             strict=True,
         ),
@@ -240,6 +287,8 @@ class Toolbox:
     voice: VoiceService | None = None
     pictures: PictureService | None = None
     music: MusicService | None = None
+    animator: AnimationService | None = None
+    cast: Cast | None = None
     attempts: list[RunAttempt] = field(default_factory=list)
     calls: list[str] = field(default_factory=list)
     # assets the tools made or fetched: (handle, filename), and credits for found photos
@@ -247,6 +296,9 @@ class Toolbox:
     credits: list[str] = field(default_factory=list)
     found: int = 0
     made: int = 0
+    designed: int = 0
+    animated: int = 0  # seconds
+    new_cast: dict[str, CastMember] = field(default_factory=dict)
 
     # -- results the loop reads back ------------------------------------------------------
 
@@ -279,9 +331,11 @@ class Toolbox:
         if not isinstance(tool_input, dict):
             return ToolOutcome(f"{name}: input must be an object", is_error=True)
         handler = {
+            "animate": self._animate,
             "describe_op": self._describe_op,
             "find_images": self._find_images,
             "inspect_media": self._inspect_media,
+            "make_character": self._make_character,
             "make_image": self._make_image,
             "make_music": self._make_music,
             "make_voiceover": self._make_voiceover,
@@ -401,6 +455,141 @@ class Toolbox:
         self.generated.append((info.handle, _slug(prompt, "made") + info.ext))
         w, h = self.engine.probe(info).get("display") or (0, 0)
         return ToolOutcome(f"{info.handle} · image {w}x{h} · generated")
+
+    # -- animation ---------------------------------------------------------------------------
+
+    def _cast_by_name(self) -> dict[str, CastMember]:
+        members = {m.name.lower(): m for m in (self.cast.members() if self.cast else [])}
+        return members | {k.lower(): m for k, m in self.new_cast.items()}
+
+    def _make_character(self, args: dict[str, Any]) -> ToolOutcome:
+        name = " ".join(str(args.get("name") or "").split())[:60]
+        kind = "place" if args.get("kind") == "place" else "character"
+        look = " ".join(str(args.get("look") or "").split())[:1200]
+        voice = " ".join(str(args.get("voice") or "").split())[:400] if kind == "character" else ""
+        if not name or not look:
+            return ToolOutcome("make_character: name and look are required", is_error=True)
+        if self.pictures is None or self.cast is None:
+            return ToolOutcome("make_character: not available on this server", is_error=True)
+        if self.designed >= MAX_CHARACTERS:
+            return ToolOutcome(
+                f"make_character: at most {MAX_CHARACTERS} designs per request", is_error=True
+            )
+        shape = "landscape" if kind == "place" else "square"
+        try:
+            data = self.pictures.generate(design_prompt(kind, look), shape, style=ANIMATION_STYLE)
+            info = self.engine.store.put_bytes(data)
+        except (PictureError, OSError) as e:
+            return ToolOutcome(f"make_character: {e}", is_error=True)
+        if info.media is not MediaType.IMAGE:
+            return ToolOutcome("make_character: no picture came back", is_error=True)
+        member = CastMember(name, kind, look, voice, info.handle)  # type: ignore[arg-type]
+        filename = _slug(name, "character") + info.ext
+        self.cast.save(member, filename)
+        self.new_cast[name] = member
+        self.designed += 1
+        self.generated.append((info.handle, filename))
+        return ToolOutcome(f"{info.handle} · {kind} {name!r} designed and saved to the cast")
+
+    def _animate(self, args: dict[str, Any]) -> ToolOutcome:
+        scene = " ".join(str(args.get("scene") or "").split())[:3000]
+        names = _strings(args.get("cast"))
+        speaker = " ".join(str(args.get("speaker") or "").split())
+        line = " ".join(str(args.get("line") or "").split())[:400]
+        shape = str(args.get("shape")) if args.get("shape") in ANIMATION_SHAPES else "landscape"
+        try:
+            seconds = int(args.get("seconds") or 6)
+        except (TypeError, ValueError):
+            seconds = 6
+        if not scene:
+            return ToolOutcome("animate: describe the scene", is_error=True)
+        if self.animator is None:
+            return ToolOutcome("animate: animation is not available on this server", is_error=True)
+        if not 4 <= seconds <= 15:
+            return ToolOutcome("animate: seconds must be 4 to 15 (one scene)", is_error=True)
+        if self.animated + seconds > MAX_ANIMATION_SECONDS:
+            left = MAX_ANIMATION_SECONDS - self.animated
+            return ToolOutcome(
+                f"animate: {self.animated}s animated already; {left}s left in this request. "
+                "Finish the episode with the scenes you have, or make the rest in a follow-up",
+                is_error=True,
+            )
+        known = self._cast_by_name()
+        missing = [n for n in names if n.lower() not in known]
+        if missing:
+            have = ", ".join(m.name for m in known.values()) or "none yet"
+            return ToolOutcome(
+                f"animate: not in the cast: {', '.join(missing)} (cast: {have}); "
+                "make_character first",
+                is_error=True,
+            )
+        members = [known[n.lower()] for n in names]
+        if bool(speaker) != bool(line):
+            return ToolOutcome("animate: give both speaker and line, or neither", is_error=True)
+        talker = known.get(speaker.lower()) if speaker else None
+        if speaker and (talker is None or talker.kind != "character"):
+            return ToolOutcome(
+                f"animate: {speaker!r} is not a character in the cast", is_error=True
+            )
+        work = Path(tempfile.mkdtemp(prefix="scene-", dir=self.engine.store.tmp))
+        try:
+            pictures = [
+                self.engine.store.path(self.engine.store.resolve(m.handle).hash).read_bytes()
+                for m in members
+            ]
+            spoken: Path | None = None
+            if talker is not None:
+                speak_as = getattr(self.voice, "speak_as", None)
+                if speak_as is None:
+                    return ToolOutcome("animate: voices are not available here", is_error=True)
+                raw = work / "line-raw.mp3"
+                raw.write_bytes(speak_as(line, talker.voice or "a natural, friendly voice"))
+                spoken = work / "line.mp3"
+                _ffmpeg(
+                    ["-i", str(raw), "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+                     "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", str(spoken)]
+                )  # fmt: skip
+                length = _seconds(spoken)
+                if length > seconds - 0.3:
+                    return ToolOutcome(
+                        f"animate: the line takes {length:.1f}s; make the scene at least "
+                        f"{min(15, int(length) + 1)}s or the line shorter",
+                        is_error=True,
+                    )
+            looks = "; ".join(f"{m.name}: {m.look[:220]}" for m in members)
+            prompt = f"{scene} Cast, as in the reference pictures: {looks}."
+            if talker is not None:
+                prompt += f' {talker.name} says, mouth moving in sync with the audio: "{line}"'
+            clip = work / "clip.mp4"
+            clip.write_bytes(
+                self.animator.animate(
+                    prompt, pictures, seconds, shape,
+                    line=spoken.read_bytes() if spoken else None,
+                )
+            )  # fmt: skip
+            out = work / "scene.mp4"
+            sound = ["-i", str(spoken)] if spoken else [
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            ]  # fmt: skip
+            _ffmpeg(["-i", str(clip), *sound, "-map", "0:v:0", "-map", "1:a:0",
+                     "-c:v", "copy", "-af", "apad", "-c:a", "aac", "-b:a", "160k",
+                     "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart",
+                     str(out)])  # fmt: skip
+            info = self.engine.store.put_file(out, media=MediaType.VIDEO, ext=".mp4", move=True)
+        except (AnimationError, VoiceError, OSError, subprocess.CalledProcessError) as e:
+            return ToolOutcome(f"animate: {e}", is_error=True)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        self.animated += seconds
+        n = sum(1 for _, f in self.generated if f.startswith("scene-")) + 1
+        self.generated.append((info.handle, f"scene-{n}.mp4"))
+        meta = self.engine.probe(info)
+        w, h = meta.get("display") or (0, 0)
+        said = f" · {talker.name} says {line!r}" if talker else " · no line (silent)"
+        return ToolOutcome(
+            f"{info.handle} · video scene {float(meta.get('duration') or 0):.2f}s {w}x{h}"
+            f"{said} · {MAX_ANIMATION_SECONDS - self.animated}s of animation left"
+        )
 
     def _make_voiceover(self, args: dict[str, Any]) -> ToolOutcome:
         text = " ".join(str(args.get("text") or "").split())
@@ -605,3 +794,22 @@ def _slug(text: str, prefix: str) -> str:
 
 def _strings(value: Any) -> list[str]:
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
+ANIMATION_SHAPES = ("landscape", "portrait", "square")
+
+
+def _ffmpeg(args: list[str]) -> None:
+    subprocess.run(
+        [find("ffmpeg"), "-hide_banner", "-nostdin", "-v", "error", "-y", *args],
+        check=True, capture_output=True, timeout=300,
+    )  # fmt: skip
+
+
+def _seconds(path: Path) -> float:
+    probe = subprocess.run(
+        [find("ffprobe"), "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    return float(probe.stdout.strip() or 0.0)

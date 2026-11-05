@@ -66,7 +66,7 @@ class FakePictures:
             raise PictureError("the website could not be reached")
         return PHOTO
 
-    def generate(self, prompt: str, shape: str) -> bytes:
+    def generate(self, prompt: str, shape: str, style: str | None = None) -> bytes:
         self.prompts.append((prompt, shape))
         return made_png()
 

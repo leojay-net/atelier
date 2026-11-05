@@ -55,7 +55,9 @@ class PictureService(Protocol):
 
     def download(self, found: Found) -> bytes: ...
 
-    def generate(self, prompt: str, shape: str) -> bytes: ...
+    def generate(self, prompt: str, shape: str, style: str | None = None) -> bytes:
+        """A new picture; `style` replaces the default modern-photo look (e.g. animation)."""
+        ...
 
 
 def _get_json(req: urllib.request.Request, timeout: float) -> dict:  # type: ignore[type-arg]
@@ -196,13 +198,13 @@ class OpenverseAndVultr:
                 raise PictureError(str(e)) from None
             return (Path(tmp) / "p").read_bytes()
 
-    def generate(self, prompt: str, shape: str) -> bytes:
+    def generate(self, prompt: str, shape: str, style: str | None = None) -> bytes:
         if not (self.vultr_base and self.vultr_key):
             raise PictureError("image generation is not configured on this server")
         body = json.dumps(
             {
                 "model": self.model,
-                "prompt": f"{prompt.strip()} {MODERN}",
+                "prompt": f"{prompt.strip()} {style or MODERN}",
                 "size": SHAPES.get(shape, SHAPES["square"]),
                 "n": 1,
             }

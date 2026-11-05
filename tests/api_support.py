@@ -37,3 +37,10 @@ pictures: Any = None  # set by a test to a fake PictureService; None means "not 
 
 def pictures_client() -> Any:
     return pictures
+
+
+animation: Any = None  # set by a test to a fake AnimationService; None means "not configured"
+
+
+def animation_client() -> Any:
+    return animation

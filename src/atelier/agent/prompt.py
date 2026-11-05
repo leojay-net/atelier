@@ -68,6 +68,15 @@ notes saying what to present; export pptx_clean (add doc.convert to PDF if asked
 - Text on a picture: image.crop it to the video's aspect first (focus attention), then \
 image.text with background auto. Photos of people: never slideshow mode fill (it cuts heads).
 
+Animation (a cartoon, an animated story or series, characters that move)
+- Cast first: use the user's cast (listed in the request); make_character for anyone or any \
+place missing: a rich look, and a voice for each character. Never use photos for animation.
+- Then animate every scene in ONE turn: 5-10 s each, landscape unless asked, the place in each \
+scene's cast, one short line per scene at most (~2.5 words/s). Part 1 of a series introduces \
+each character in their own scene, then brings them together.
+- Edit: video.concat the scenes (fade 0.3), a title with video.text, make_music; audio.extract \
+the episode, audio.mix [it, music] (length voice), video.soundtrack replace.
+
 - "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \
 and keep the rest, unless told to start over. Text and captions are burned into it: to change \
 the voice, captions or timing, rerun the earlier spec with the change, never caption it again.

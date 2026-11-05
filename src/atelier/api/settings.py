@@ -144,6 +144,9 @@ ATELIER_LINKS_ALLOW_PRIVATE = False
 ATELIER_MUSIC_CLIENT = os.environ.get(  # () -> MusicService | None: make_music (ACE-Step)
     "ATELIER_MUSIC_CLIENT", "atelier.agent.music.from_environment"
 )
+ATELIER_ANIMATION_CLIENT = os.environ.get(  # () -> AnimationService | None: animate (H3)
+    "ATELIER_ANIMATION_CLIENT", "atelier.agent.animation.from_environment"
+)
 ATELIER_PICTURES_CLIENT = os.environ.get(  # () -> PictureService: find_images, make_image
     "ATELIER_PICTURES_CLIENT", "atelier.agent.pictures.from_environment"
 )

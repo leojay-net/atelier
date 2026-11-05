@@ -23,6 +23,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from atelier import links
+from atelier.agent.cast import describe
 from atelier.agent.client import MissingCredentials
 from atelier.agent.config import DEFAULT_MODEL, AgentConfig
 from atelier.agent.loop import AgentResult
@@ -240,6 +241,9 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
         )
     elif mine:
         prompt += "\n\nThe user has recorded their own voice: voice my_voice if they ask for it."
+    cast = describe(services.DjangoCast(job.org).members())
+    if cast:
+        prompt = f"{prompt}\n\n{cast}"
     kit = brand_kit_text(job)
     handles = list(dict.fromkeys([*job.assets, *linked, *earlier]))[:20]  # new files first
     if kit:
@@ -260,6 +264,8 @@ def _run_prompt(job: Job, engine: Engine) -> Job:
         voice=_voice_for(job, engine),
         pictures=_factory(settings.ATELIER_PICTURES_CLIENT)(),
         music=_factory(settings.ATELIER_MUSIC_CLIENT)(),
+        animator=_factory(settings.ATELIER_ANIMATION_CLIENT)(),
+        cast=services.DjangoCast(job.org, job),
     )
     for handle, name in res.generated:  # voiceovers, found and made pictures: the user's too
         services.register_asset(job.org, engine.store.resolve(handle), filename=name, origin=job)

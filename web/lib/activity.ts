@@ -54,6 +54,8 @@ const TOOLS: Record<string, string> = {
   make_voiceover: "Recording the voiceover",
   find_images: "Searching the web for pictures",
   make_image: "Creating a picture",
+  make_character: "Designing a character",
+  animate: "Animating a scene (about 20 seconds each)",
   make_music: "Composing original music",
   run_pipeline: "Editing",
 };

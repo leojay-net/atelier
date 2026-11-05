@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import importlib
 import mimetypes
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.http import FileResponse, HttpRequest, HttpResponse
 from django.utils import timezone
@@ -23,10 +26,12 @@ from ninja.files import UploadedFile
 from atelier.agent.voice import ACCENTS, DEFAULT_VOICE, MY_VOICE, PASSAGE, PEOPLE, VOICES
 from atelier.api.core import accounts, services
 from atelier.api.core.auth import ApiKeyAuth
-from atelier.api.core.models import Asset, Job, Org, SavedRecipe
+from atelier.api.core.models import Asset, Character, Job, Org, SavedRecipe
 from atelier.api.core.queue import enqueue
 from atelier.api.core.schemas import (
     BrandKitIn,
+    CharacterEdit,
+    CharacterIn,
     ChatIn,
     JobIn,
     LoginIn,
@@ -672,3 +677,113 @@ def put_brand_kit(request: HttpRequest, body: BrandKitIn) -> dict[str, Any]:
 @api.get("/usage")
 def get_usage(request: HttpRequest) -> dict[str, Any]:
     return services.usage(_org(request))
+
+
+# -- the animation cast (characters and places) -------------------------------------------------
+
+
+def _service(dotted: str) -> Any:
+    module, _, name = dotted.rpartition(".")
+    return getattr(importlib.import_module(module), name)()
+
+
+def _design(org: Org, kind: str, look: str) -> str:
+    """Draw a cast member's design picture in the animation style; returns its handle."""
+    from atelier.agent.animation import STYLE
+    from atelier.agent.cast import design_prompt
+    from atelier.agent.pictures import PictureError
+
+    pictures = _service(settings.ATELIER_PICTURES_CLIENT)
+    if pictures is None:
+        raise ApiError(503, "unavailable", "drawing characters is not available right now")
+    shape = "landscape" if kind == "place" else "square"
+    try:
+        data = pictures.generate(design_prompt(kind, look), shape, style=STYLE)
+    except PictureError as e:
+        raise ApiError(502, "picture_failed", f"the design could not be drawn: {e}") from None
+    info = services.engine_for(org).store.put_bytes(data)
+    if info.media is not MediaType.IMAGE:
+        raise ApiError(502, "picture_failed", "no picture came back; try again")
+    return info.handle
+
+
+def _character(request: HttpRequest, character_id: int) -> Character:
+    found = Character.objects.filter(pk=character_id, org=_org(request)).first()
+    if found is None:
+        raise ApiError(404, "not_found", "no such character")
+    return found
+
+
+@api.get("/characters")
+def list_characters(request: HttpRequest) -> dict[str, Any]:
+    rows = Character.objects.filter(org=_org(request)).order_by("kind", "created_at")
+    return {"items": [services.character_dict(c) for c in rows]}
+
+
+@api.post("/characters", response={201: dict[str, Any]})
+def create_character(request: HttpRequest, body: CharacterIn) -> Status[dict[str, Any]]:
+    """Design a character or place from a description and add it to the cast."""
+    from atelier.agent.cast import CastMember
+
+    org = _org(request)
+    name = " ".join(body.name.split())
+    if Character.objects.filter(org=org, name__iexact=name).exists():
+        raise ApiError(409, "exists", f"you already have {name!r}; edit it instead")
+    look = " ".join(body.look.split())
+    voice = " ".join(body.voice.split()) if body.kind == "character" else ""
+    handle = _design(org, body.kind, look)
+    member = CastMember(name, body.kind, look, voice, handle)
+    filename = "character-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") + ".png"
+    made = services.save_character(org, member, filename, origin=None)
+    return Status(201, services.character_dict(made))
+
+
+@api.patch("/characters/{character_id}")
+def edit_character(request: HttpRequest, character_id: int, body: CharacterEdit) -> dict[str, Any]:
+    c = _character(request, character_id)
+    if body.name is not None:
+        name = " ".join(body.name.split())
+        clash = Character.objects.filter(org=c.org, name__iexact=name).exclude(pk=c.pk)
+        if clash.exists():
+            raise ApiError(409, "exists", f"you already have {name!r}")
+        c.name = name
+    if body.voice is not None and c.kind == "character":
+        c.voice = " ".join(body.voice.split())
+    look_changed = body.look is not None and " ".join(body.look.split()) != c.look
+    if body.look is not None:
+        c.look = " ".join(body.look.split())
+    if look_changed or body.redesign:
+        c.image = _design(c.org, c.kind, c.look)
+        services.register_asset(
+            c.org, services.engine_for(c.org).store.resolve(c.image),
+            "character-" + re.sub(r"[^a-z0-9]+", "-", c.name.lower()).strip("-") + ".png",
+        )  # fmt: skip
+    c.updated_at = timezone.now()
+    c.save()
+    return services.character_dict(c)
+
+
+@api.delete("/characters/{character_id}")
+def delete_character(request: HttpRequest, character_id: int) -> dict[str, Any]:
+    """Remove it from the cast (its design picture stays in the Library)."""
+    c = _character(request, character_id)
+    c.delete()
+    return {"deleted": character_id}
+
+
+@api.get("/characters/{character_id}/voice")
+def hear_character(request: HttpRequest, character_id: int) -> HttpResponse:
+    """A short line in the character's voice, to hear it before animating."""
+    from atelier.agent.voice import VoiceError
+
+    c = _character(request, character_id)
+    if c.kind != "character":
+        raise ApiError(422, "bad_request", "a place has no voice")
+    voice = _service(settings.ATELIER_VOICE_CLIENT)
+    if voice is None or not hasattr(voice, "speak_as"):
+        raise ApiError(503, "unavailable", "voices are not available right now")
+    try:
+        mp3 = voice.speak_as(f"Hi! I'm {c.name}. Nice to meet you!", c.voice or "a friendly voice")
+    except VoiceError as e:
+        raise ApiError(502, "voice_failed", str(e)) from None
+    return HttpResponse(mp3, content_type="audio/mpeg")
