@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
+import Link from "next/link";
 import clsx from "clsx";
 import {
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
   Paperclip,
   Plus,
   Presentation,
+  Scissors,
   SendHorizonal,
   Sparkles,
   UploadCloud,
@@ -197,14 +199,25 @@ function Stage({
       {shown ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[13px] text-white/70">{friendlyMedia(shown)}</p>
-          <a
-            href={contentUrl(shown.handle)}
+          <div className="flex items-center gap-2">
+            {shown.media === "video" && !working && thread.at(-1) ? (
+              <Link
+                href={`/edit/${thread.at(-1)!.id}?asset=${encodeURIComponent(shown.handle)}`}
+                className="inline-flex items-center gap-2 rounded-md border border-white/30 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+              >
+                <Scissors size={16} />
+                Edit
+              </Link>
+            ) : null}
+            <a
+              href={contentUrl(shown.handle)}
             download={`atelier-${shown.handle.slice(6, 14)}${shown.ext}`}
             className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover"
           >
             <Download size={16} />
             Download
           </a>
+          </div>
         </div>
       ) : null}
 

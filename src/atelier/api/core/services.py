@@ -18,7 +18,7 @@ from typing import Any
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Max, Sum
+from django.db.models import Max, Q, Sum
 from django.utils import timezone
 
 from atelier.agent.cast import CastMember
@@ -276,7 +276,8 @@ def library(org: Org, section: str, media: str, limit: int, offset: int) -> dict
 def conversations(org: Org, limit: int = 50) -> list[dict[str, Any]]:
     """Each conversation once, newest first, by its latest job (prompt jobs with no follow-up)."""
     ends = (
-        Job.objects.filter(org=org, kind="prompt", followups__isnull=True, chat_deleted=False)
+        Job.objects.filter(followups__isnull=True, chat_deleted=False, org=org)
+        .filter(Q(kind="prompt") | Q(parent__isnull=False))  # a hand edit continues a chat
         .order_by("-created_at")
         .select_related("parent")[:limit]
     )
