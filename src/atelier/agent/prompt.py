@@ -48,6 +48,8 @@ mood. Slideshow durations are whole beats of it (usually 4 beats). Under a voice
 - Every voiceover gets its captions burned in: video.captions with the captions make_voiceover \
 returns, style bold_pop. Write for the ear: short sentences, contractions, energy first, \
 ~2.5 words/second; fit the shots to the voice.
+- Finish like an editor: video.sfx after the sound (a whoosh at every cut, a pop when a title \
+appears, a riser into the hook, volume ~0.3); titles and captions animate in by themselves.
 - No sound asked for and none attached: run nothing and ask whether they want music (you compose \
 it, or they attach a track), a voiceover you write, both, or silence. Audio mentioned but not \
 listed: say it did not arrive.

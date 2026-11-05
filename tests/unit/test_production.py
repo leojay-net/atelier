@@ -211,3 +211,44 @@ def test_durations_set_each_shot(tmp_path: Path) -> None:
                 "outputs": ["s"],
             }
         )
+
+
+def test_sound_effects_land_on_their_times_and_nothing_else_plays(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    pic = engine.store.put_file(FIXTURES / "photo.png").handle
+    result = engine.run(
+        {
+            "version": 1,
+            "inputs": {"a": pic, "b": pic},
+            "steps": [
+                {
+                    "id": "s",
+                    "op": "video.slideshow",
+                    "in": ["a", "b"],
+                    "args": {"durations": [1.5, 1.5], "short_side": 240, "motion": "none"},
+                },
+                {
+                    "id": "x",
+                    "op": "video.sfx",
+                    "in": "s",
+                    "args": {"hits": [{"at": 0.0, "kind": "pop"}, {"at": 1.5, "kind": "whoosh"}]},
+                },
+                {"id": "out", "op": "export", "in": "x", "args": {"preset": "web_h264"}},
+            ],
+            "outputs": ["out"],
+        }
+    )
+    path = engine.store.path(result.outputs["out"].hash)
+    pcm = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
+        capture_output=True,
+        check=True,
+    ).stdout
+    x = np.abs(np.frombuffer(pcm, np.float32))
+
+    def peak(a: float, b: float) -> float:
+        return float(x[int(a * 8000) : int(b * 8000)].max(initial=0.0))
+
+    assert peak(0.0, 0.15) > 0.02  # the pop
+    assert peak(1.2, 1.6) > 0.02  # the whoosh swelling into the cut
+    assert peak(2.2, 2.9) < 0.001  # silence after it
