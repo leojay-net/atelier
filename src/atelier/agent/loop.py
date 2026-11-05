@@ -146,6 +146,12 @@ def _run(
         record.first_pass = toolbox.first_pass
         best = toolbox.best()
         final = final or {}
+        if status == "budget" and (done := toolbox.finished_edit()) is not None:
+            best, status = done, "ok"  # the edit is done; only the reply did not fit
+            final = {
+                "summary": "Here it is. I ran out of steps before describing it, so have a look "
+                "and tell me anything you would like changed.",
+            }  # no title: the request's first words name it
         return AgentResult(
             status=status,
             summary=str(final.get("summary", "")),

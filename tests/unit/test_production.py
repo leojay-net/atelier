@@ -342,3 +342,26 @@ def test_a_moving_slide_keeps_its_text_in_frame(tmp_path: Path) -> None:
     last = frames(engine.store.path(result.outputs["out"].hash), [2.9])[0]  # end of the move
     assert last[:, :2].max() < 120  # nothing bright at the left edge: the text was not cut
     assert last[:, 2:80].max() > 180  # and it is still on screen
+
+
+def test_a_finished_edit_is_delivered_when_the_turns_run_out(tmp_path: Path) -> None:
+    """Live: the full tutorial rendered and passed, then the reply turn did not fit and the job
+    failed. The last run is delivered if it used every voice and music track made; a test
+    render without them is not."""
+    from atelier.agent.tools import RunAttempt
+
+    org, _ = make_org("acme")
+    box = Toolbox(services.engine_for(org), Budget(AgentConfig().limits))
+    voice, music = "asset:" + "a" * 64, "asset:" + "b" * 64
+    box.generated += [
+        (voice, "voiceover.mp3"),
+        (music, "music.mp3"),
+        ("asset:" + "c" * 64, "x.png"),
+    ]
+    ok: Any = object()
+    box.attempts.append(RunAttempt({"inputs": {"p": "asset:" + "c" * 12}}, ok, True))
+    assert box.finished_edit() is None  # a picture-only test render
+    box.attempts.append(RunAttempt({"inputs": {"v": voice, "m": "asset:" + "b" * 12}}, ok, True))
+    assert box.finished_edit() is box.attempts[-1]
+    box.attempts.append(RunAttempt({"inputs": {"v": voice, "m": music}}, None, False))
+    assert box.finished_edit() is None  # the last try failed

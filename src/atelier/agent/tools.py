@@ -251,6 +251,18 @@ class Toolbox:
         pool = [a for a in ran if a.passed] or ran
         return pool[-1] if pool else None
 
+    def finished_edit(self) -> RunAttempt | None:
+        """When the turns run out: the last run, if it passed and used every voiceover and
+        music track made for this request, so it is the full edit and not a test (live: a
+        tutorial's complete render was thrown away because the reply turn never came)."""
+        if not self.attempts or not self.attempts[-1].passed:
+            return None
+        last = self.attempts[-1]
+        used = json.dumps(last.spec, default=str)
+        sounds = [h for h, name in self.generated if name.endswith((".mp3", ".wav"))]
+        complete = sounds and all(h.split(":")[-1][:12] in used for h in sounds)
+        return last if complete else None
+
     @property
     def first_pass(self) -> bool | None:
         return self.attempts[0].passed if self.attempts else None
