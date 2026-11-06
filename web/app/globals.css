@@ -73,8 +73,12 @@ body {
   font-family: var(--font-sans);
 }
 
-* {
-  border-color: var(--color-border);
+/* In the base layer, so utilities like border-accent and border-border-strong override it
+   (unlayered CSS would beat every utility). */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 :focus-visible {
@@ -118,4 +122,67 @@ dialog::backdrop {
 
 .animate-indeterminate {
   animation: indeterminate 1.1s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------------------------------
+   Workspace palette ("ws"): the video editor is always dark, like every pro editing tool, so
+   the picture is judged against a neutral surround. It re-maps the app's own semantic tokens
+   (bg, fg, border, accent) inside .ws, so every existing component re-skins automatically.
+
+   Surfaces are one cool-neutral ramp (hue ~220, chroma low), each step a little lighter:
+     canvas  #0b0d10  behind the picture and the timeline
+     panel   #12151a  side panels (bg)
+     raised  #181c22  bars, cards, inputs (bg-subtle)
+     hover   #20252d  hover and selected rows (bg-inset)
+   One accent (a calm blue, readable at small sizes), plus one muted colour per track kind, all
+   at a similar lightness so no track shouts over another.
+   ------------------------------------------------------------------------------------------ */
+.ws {
+  color-scheme: dark;
+  --color-bg: #12151a;
+  --color-bg-subtle: #181c22;
+  --color-bg-inset: #20252d;
+  --color-border: #232831;
+  --color-border-strong: #333a46;
+  --color-fg: #e6e9ee;
+  --color-fg-secondary: #a2a9b5;
+  --color-fg-tertiary: #727a88;
+  --color-accent: #5aa2ff;
+  --color-accent-hover: #7cb4ff;
+  --color-accent-active: #3d8bf0;
+  --color-accent-subtle-bg: #16263d;
+  --color-on-accent: #07101c;
+  --color-status-succeeded: #4cc38a;
+  --color-status-failed: #ff6b6b;
+
+  --ws-canvas: #0b0d10;
+  --ws-track: #0f1216;
+  --ws-playhead: #f4f6fa;
+  --ws-video: #3f6fb5;
+  --ws-text: #b98a2e;
+  --ws-voice: #2f9a73;
+  --ws-music: #8461c4;
+  --ws-sfx: #c75c82;
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+.ws ::selection {
+  background: #2b4f80;
+}
+
+.ws input[type="range"] {
+  accent-color: var(--color-accent);
+}
+
+.ws select,
+.ws input,
+.ws textarea {
+  color-scheme: dark;
+}
+
+/* thin, quiet scrollbars inside the workspace */
+.ws * {
+  scrollbar-width: thin;
+  scrollbar-color: #333a46 transparent;
 }

@@ -1,5 +1,5 @@
-import { Studio } from "@/components/studio/Studio";
+import { Home } from "@/components/home/Home";
 
 export default function HomePage() {
-  return <Studio initialThread={[]} />;
+  return <Home />;
 }

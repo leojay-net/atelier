@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { Editor } from "@/components/editor/Editor";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Edit · Atelier" };
-
+/** The hand editor now lives inside the workspace; old links land there. */
 export default async function EditPage({
   params,
   searchParams,
@@ -12,5 +10,5 @@ export default async function EditPage({
 }) {
   const { id } = await params;
   const { asset } = await searchParams;
-  return <Editor jobId={id} source={asset ?? ""} />;
+  redirect(`/studio/${id}${asset ? `?asset=${encodeURIComponent(asset)}` : ""}`);
 }
