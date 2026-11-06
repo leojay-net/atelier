@@ -1,0 +1,115 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Atelier workspace preview</title>
+<style>
+*{box-sizing:border-box;margin:0}
+body{background:#0e0e11;color:#d8d8de;font:13px system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.top{height:44px;background:#16161b;border-bottom:1px solid #26262d;display:flex;align-items:center;padding:0 12px;gap:14px}
+.top b{font-size:14px}.top .sp{flex:1}
+.btn{background:#26262d;border-radius:6px;padding:6px 12px;color:#d8d8de}
+.btn.pri{background:#7c5cff;color:#fff}
+.main{flex:1;display:flex;min-height:0}
+.panel{background:#16161b;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.ph{padding:10px 12px;border-bottom:1px solid #26262d;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.ph small{color:#8a8a96;font-weight:400}
+.split{width:5px;background:#0e0e11;cursor:col-resize;flex:none}
+.split:hover,.split.on{background:#7c5cff}
+.hsplit{height:5px;background:#0e0e11;cursor:row-resize;flex:none}
+.hsplit:hover{background:#7c5cff}
+.item{display:flex;gap:8px;padding:8px 10px;align-items:center;border-bottom:1px solid #1f1f26}
+.item.act{background:#22222b}
+.th{width:44px;height:28px;border-radius:4px;background:linear-gradient(135deg,#4b3fa8,#c4577a);flex:none}
+.th.b{background:linear-gradient(135deg,#1f7a6b,#6acb8a)}.th.c{background:linear-gradient(135deg,#a86a1f,#e9c46a)}
+.tabs{display:flex;border-bottom:1px solid #26262d}
+.tabs span{padding:9px 12px;color:#8a8a96}.tabs .on{color:#fff;border-bottom:2px solid #7c5cff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px}
+.grid div{aspect-ratio:16/10;border-radius:6px;background:#26262d;position:relative}
+.grid i{position:absolute;left:5px;bottom:4px;font-size:10px;font-style:normal;background:#000a;padding:1px 5px;border-radius:3px}
+.center{flex:1;display:flex;flex-direction:column;min-width:0}
+.player{flex:1;background:#0b0b0e;display:flex;align-items:center;justify-content:center;min-height:0}
+.screen{height:88%;aspect-ratio:9/16;max-width:90%;border-radius:8px;background:linear-gradient(160deg,#3b2f8f,#d1558a 70%,#f3a66b);display:flex;align-items:flex-end;justify-content:center;padding-bottom:40px;font-size:20px;font-weight:700;color:#fff}
+.tool{display:flex;gap:8px;padding:7px 12px;border-top:1px solid #26262d;background:#16161b;align-items:center}
+.tool .btn{padding:4px 9px}.tool .sp{flex:1}
+.tl{height:190px;background:#121216;position:relative;padding:6px 12px 6px 70px;display:flex;flex-direction:column;gap:6px;flex:none}
+.tr{height:30px;position:relative;background:#1a1a20;border-radius:4px}
+.tr em{position:absolute;left:-62px;top:8px;color:#8a8a96;font-style:normal;font-size:11px}
+.bar{position:absolute;top:3px;bottom:3px;border-radius:4px;padding:3px 6px;font-size:11px;color:#fff;overflow:hidden;white-space:nowrap}
+.v{background:#5b4bd0}.t{background:#c9a227;color:#111}.a{background:#2f9e6b}.m{background:#2a7fb8}.cut{background:#333;opacity:.6}
+.head{position:absolute;left:34%;top:0;bottom:0;width:2px;background:#ff4d6d}
+.chat{padding:10px;display:flex;flex-direction:column;gap:8px;flex:1;overflow:hidden}
+.msg{background:#22222b;border-radius:8px;padding:8px 10px;max-width:90%}
+.msg.me{background:#3a2f8f;align-self:flex-end}
+.act2{color:#8a8a96;font-size:12px}
+.comp{border-top:1px solid #26262d;padding:10px;display:flex;flex-direction:column;gap:6px}
+.inp{background:#0e0e11;border:1px solid #2c2c35;border-radius:8px;padding:10px;color:#8a8a96}
+.note{position:fixed;right:14px;bottom:10px;background:#000b;padding:6px 10px;border-radius:6px;color:#aaa;font-size:11px}
+</style></head><body>
+<div class="top">
+  <b>◧ Atelier</b><span style="color:#8a8a96">← Projects</span><b>Tolu's Birthday Video ✎</b>
+  <span class="sp"></span><span>? Help</span><span class="btn">⬇ Download</span><span class="btn pri">Save version</span>
+</div>
+<div class="main" id="main">
+  <!-- FAR LEFT: history / projects -->
+  <div class="panel" id="hist" style="width:210px">
+    <div class="ph">History <small>« collapse</small></div>
+    <div class="tabs"><span class="on">Projects</span><span>Characters</span><span>Library</span></div>
+    <div class="item act"><div class="th"></div><div>Tolu's Birthday<br><small style="color:#8a8a96">now · working…</small></div></div>
+    <div class="item"><div class="th b"></div><div>Python tutorial<br><small style="color:#8a8a96">Yesterday</small></div></div>
+    <div class="item"><div class="th c"></div><div>Friends reel<br><small style="color:#8a8a96">Nov 4</small></div></div>
+    <div class="item"><div class="th b"></div><div>Kofi &amp; Bolt ep. 1<br><small style="color:#8a8a96">Nov 2</small></div></div>
+    <div style="flex:1"></div>
+    <div class="item">⚙ Settings</div>
+  </div>
+  <div class="split" data-t="hist"></div>
+
+  <!-- MEDIA / TOOLS -->
+  <div class="panel" id="tools" style="width:290px">
+    <div class="tabs"><span class="on">Media</span><span>Audio</span><span>Text</span><span>Effects</span><span>Adjust</span></div>
+    <div class="ph">Versions &amp; files <small>+ Add</small></div>
+    <div class="grid">
+      <div style="background:linear-gradient(135deg,#3b2f8f,#d1558a)"><i>V3 · AI</i></div>
+      <div style="background:linear-gradient(135deg,#3b2f8f,#7a6ad0)"><i>V2 · by hand</i></div>
+      <div style="background:linear-gradient(135deg,#2c2c80,#5a8fd8)"><i>V1 · AI</i></div>
+      <div><i>photo1.jpg</i></div><div><i>clip.mp4</i></div><div><i>song.mp3</i></div>
+    </div>
+  </div>
+  <div class="split" data-t="tools"></div>
+
+  <!-- CENTER: player + timeline -->
+  <div class="center">
+    <div class="player"><div class="screen">Happy Birthday Tolu!</div></div>
+    <div class="tool"><span>⏵</span><span>0:10.2 / 0:30</span><span class="sp"></span>
+      <span class="btn">✂ Split</span><span class="btn">🗑 Delete</span><span class="btn">⇤ Start</span><span class="btn">⇥ End</span><span class="btn">↶ Undo</span><span class="sp"></span><span style="color:#8a8a96">− zoom +</span></div>
+    <div class="tl">
+      <div class="tr"><em>Video</em><div class="bar v" style="left:0;width:38%">clip.mp4</div><div class="bar cut" style="left:38%;width:6%"></div><div class="bar v" style="left:44%;width:56%">photos (moving)</div></div>
+      <div class="tr"><em>Text</em><div class="bar t" style="left:3%;width:16%">Happy Birthday</div><div class="bar t" style="left:70%;width:18%">Love, the gang</div></div>
+      <div class="tr"><em>Voice</em><div class="bar a" style="left:8%;width:40%">voiceover · Nigerian ♀</div></div>
+      <div class="tr"><em>Music</em><div class="bar m" style="left:0;width:100%">♪ upbeat original music</div></div>
+      <div class="head"></div>
+    </div>
+  </div>
+
+  <div class="split" data-t="chat" data-r="1"></div>
+  <!-- FAR RIGHT: AI chat -->
+  <div class="panel" id="chat" style="width:340px">
+    <div class="tabs"><span class="on">✨ AI assistant</span><span>Properties</span></div>
+    <div class="chat">
+      <div class="msg me">make a birthday video for Tolu from these photos</div>
+      <div class="act2">• Writing the script • Making the voiceover • Composing music</div>
+      <div class="msg">Here's V1. Want it shorter or a different mood?</div>
+      <div class="msg me">add a funny sound when the cake shows</div>
+      <div class="act2">● Working… (edit tools locked until I'm done)</div>
+    </div>
+    <div class="comp"><div class="inp">Ask for a change…</div><div style="display:flex;justify-content:space-between;color:#8a8a96"><span>📎 Attach</span><span>🎙 Voice ▾</span></div></div>
+  </div>
+</div>
+<div class="note">Drag the thin bars between panels to resize. Click a split to collapse.</div>
+<script>
+document.querySelectorAll('.split').forEach(s=>{
+  const p=document.getElementById(s.dataset.t), r=!!s.dataset.r;
+  s.onmousedown=e=>{s.classList.add('on');const x0=e.clientX,w0=p.offsetWidth;
+    const mv=m=>{p.style.width=Math.max(0,Math.min(520,w0+(r?-1:1)*(m.clientX-x0)))+'px'};
+    const up=()=>{s.classList.remove('on');removeEventListener('mousemove',mv);removeEventListener('mouseup',up)};
+    addEventListener('mousemove',mv);addEventListener('mouseup',up)};
+  s.ondblclick=()=>{p.style.width=p.offsetWidth<20?(p.id=='chat'?'340px':'260px'):'0px'};
+});
+</script></body></html>

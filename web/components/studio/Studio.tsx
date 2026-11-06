@@ -3,20 +3,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
+  ArrowLeft,
+  AudioLines,
   CheckCircle2,
   ChevronDown,
   Circle,
+  CircleHelp,
   Download,
+  FolderOpen,
   Loader2,
   Mic,
+  Music,
   Paperclip,
-  Plus,
-  Presentation,
-  Scissors,
+  PanelLeft,
+  Maximize2,
+  Minimize2,
+  PanelRight,
+  Pencil,
+  Save,
   SendHorizonal,
+  SlidersHorizontal,
   Sparkles,
+  Type,
   UploadCloud,
   X,
   XCircle,
@@ -28,15 +39,24 @@ import { useUpload, type UploadItem } from "@/hooks/useUpload";
 import { contentUrl } from "@/components/media/MediaPreview";
 import { activityLines, friendlyGroup } from "@/lib/activity";
 import { readApiError } from "@/lib/errors";
-import { RETRY_STORAGE_KEY } from "@/components/jobs/JobDetail";
-import { CHATS_CHANGED_EVENT, NEW_CHAT_EVENT } from "@/components/layout/Sidebar";
-
-const EXAMPLES = [
-  "Make a short reel from my photos with this music",
-  "Turn my pictures into a video with a voiceover that sounds human",
-  "Make this video vertical for TikTok and add captions",
-  "Join my clips together with smooth transitions",
-];
+import { CHATS_CHANGED_EVENT } from "@/components/layout/Sidebar";
+import { renameChat } from "@/components/chats/chatActions";
+import { useEdit } from "@/components/editor/useEdit";
+import { EditPlayer } from "@/components/editor/EditPlayer";
+import { EditTimeline } from "@/components/editor/EditTimeline";
+import {
+  AudioPanel,
+  EditFileInput,
+  EffectsPanel,
+  PropertiesPanel,
+  TextPanel,
+} from "@/components/editor/EditPanels";
+import { History } from "@/components/workspace/History";
+import { MediaPanel } from "@/components/workspace/MediaPanel";
+import { Viewer, WorkingBar } from "@/components/workspace/Viewer";
+import { Splitter, usePanelWidth } from "@/components/workspace/Panels";
+import { Tour, TOUR_EVENT } from "@/components/tour/Tour";
+import { STUDIO_TOUR } from "@/components/tour/steps";
 
 interface AssetInfo {
   handle: string;
@@ -135,138 +155,6 @@ function LiveJob({
   return null;
 }
 
-// -- the stage (left): what you are making ------------------------------------------------------
-
-function Stage({
-  thread,
-  working,
-  activity,
-  assets,
-  pick,
-  picked,
-}: {
-  thread: Job[];
-  working: boolean;
-  activity: ReturnType<typeof activityLines>;
-  assets: Record<string, AssetInfo>;
-  pick: (handle: string) => void;
-  picked: string | null;
-}) {
-  const allOutputs = thread.flatMap((j) => outputsOf(j));
-  const latest = [...thread].reverse().find((j) => outputsOf(j).length > 0);
-  const shown =
-    allOutputs.find((o) => o.handle === picked) ?? (latest ? outputsOf(latest)[0] : undefined);
-  const inputs = Array.from(new Set(thread.flatMap((j) => j.assets)));
-  const current = activity.filter((l) => l.state === "doing").at(-1);
-
-  return (
-    <section className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[#0e0f12] p-4 md:p-6">
-      <div className="relative flex min-h-[260px] flex-1 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-black">
-        {shown ? (
-          shown.media === "video" ? (
-            <video key={shown.handle} src={contentUrl(shown.handle)} controls preload="metadata" className="max-h-full max-w-full" />
-          ) : shown.media === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL
-            <img src={contentUrl(shown.handle)} alt="Your result" className="max-h-full max-w-full object-contain" />
-          ) : shown.media === "audio" ? (
-            <audio src={contentUrl(shown.handle)} controls className="w-3/4" />
-          ) : (
-            <div className="flex flex-col items-center gap-3 text-white/80">
-              {shown.media === "pptx" ? <Presentation size={44} /> : <Sparkles size={40} />}
-              <p className="text-[15px] font-medium">
-                {shown.media === "pptx" ? "Your presentation is ready" : "Your file is ready"}
-              </p>
-              <p className="text-[12px] text-white/50">Download it below to open it.</p>
-            </div>
-          )
-        ) : (
-          <div className="flex flex-col items-center gap-3 px-6 text-center text-white/60">
-            <Sparkles size={30} />
-            <p className="text-[15px] font-medium text-white/80">Your video will appear here</p>
-            <p className="max-w-sm text-[13px]">
-              Add your photos, videos or music, then tell me what you want in the chat.
-            </p>
-          </div>
-        )}
-        {working ? (
-          <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 bg-black/75 px-4 py-3 text-[13px] text-white backdrop-blur">
-            <Loader2 size={16} className="animate-spin" />
-            <span className="truncate">{current?.text ?? "Working on it"}…</span>
-          </div>
-        ) : null}
-      </div>
-
-      {shown ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[13px] text-white/70">{friendlyMedia(shown)}</p>
-          <div className="flex items-center gap-2">
-            {shown.media === "video" && !working && thread.at(-1) ? (
-              <Link
-                href={`/edit/${thread.at(-1)!.id}?asset=${encodeURIComponent(shown.handle)}`}
-                className="inline-flex items-center gap-2 rounded-md border border-white/30 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
-              >
-                <Scissors size={16} />
-                Edit
-              </Link>
-            ) : null}
-            <a
-              href={contentUrl(shown.handle)}
-            download={`atelier-${shown.handle.slice(6, 14)}${shown.ext}`}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover"
-          >
-            <Download size={16} />
-            Download
-          </a>
-          </div>
-        </div>
-      ) : null}
-
-      {inputs.length + allOutputs.length > 0 ? (
-        <div>
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-white/40">
-            In this project
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {[...allOutputs.map((o, n) => ({ handle: o.handle, media: o.media, label: "Result", tag: `V${n + 1}` })),
-              ...inputs.map((h) => ({ handle: h, media: assets[h]?.media, label: assets[h]?.filename ?? "file", tag: "" }))].map(
-              (f) => (
-                <button
-                  key={f.handle + f.label}
-                  type="button"
-                  onClick={() => f.label === "Result" && pick(f.handle)}
-                  title={f.label}
-                  className={clsx(
-                    "relative h-16 w-24 shrink-0 overflow-hidden rounded-md border bg-white/5",
-                    f.handle === shown?.handle ? "border-accent" : "border-white/10",
-                    f.label === "Result" ? "cursor-pointer" : "cursor-default",
-                  )}
-                >
-                  {f.media === "image" ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={contentUrl(f.handle)} alt="" className="h-full w-full object-cover" />
-                  ) : f.media === "video" ? (
-                    <video src={contentUrl(f.handle)} muted preload="metadata" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex h-full items-center justify-center px-1 text-[10px] text-white/60">
-                      {f.media === "audio" ? "♪ " : ""}
-                      {f.label}
-                    </span>
-                  )}
-                  {f.label === "Result" ? (
-                    <span className="absolute left-1 top-1 rounded bg-accent px-1 text-[9px] font-semibold text-on-accent">
-                      {f.tag}
-                    </span>
-                  ) : null}
-                </button>
-              ),
-            )}
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 // -- the chat (right) --------------------------------------------------------------------------
 
 function Activity({ lines }: { lines: ReturnType<typeof activityLines> }) {
@@ -309,7 +197,7 @@ function Bubble({ who, children }: { who: "you" | "ai"; children: React.ReactNod
       <div
         className={clsx(
           "max-w-[88%] space-y-2 rounded-2xl px-3.5 py-2.5 text-[14px] leading-relaxed",
-          who === "you" ? "rounded-br-sm bg-accent text-on-accent" : "rounded-bl-sm bg-bg-inset text-fg",
+          who === "you" ? "rounded-br-sm border border-accent/30 bg-accent-subtle-bg text-fg" : "rounded-bl-sm bg-bg-subtle text-fg",
         )}
       >
         {children}
@@ -433,7 +321,7 @@ function Turn({
   );
 }
 
-function Attachment({ item, onRemove }: { item: UploadItem; onRemove: () => void }) {
+export function Attachment({ item, onRemove }: { item: UploadItem; onRemove: () => void }) {
   return (
     <span
       className={clsx(
@@ -461,7 +349,7 @@ function Attachment({ item, onRemove }: { item: UploadItem; onRemove: () => void
 
 /** The voiceover voice for this chat: an accent, as a woman's or a man's voice. "" lets the AI
  * choose (it matches the request, else an American woman). Kept for the rest of the chat. */
-function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [accents, setAccents] = useState<VoiceAccent[]>([]);
   const [mine, setMine] = useState(false);
   useEffect(() => {
@@ -512,7 +400,128 @@ function VoicePicker({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-export function Studio({ initialThread }: { initialThread: Job[] }) {
+// -- the project name, editable in place -------------------------------------------------------
+
+function ProjectName({ title, chatId, onRenamed }: { title: string; chatId: string; onRenamed: (t: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(title);
+  async function commit() {
+    const next = name.trim();
+    setEditing(false);
+    if (!next || next === title || !chatId) return;
+    if (!(await renameChat(chatId, next))) {
+      onRenamed(next);
+      window.dispatchEvent(new Event(CHATS_CHANGED_EVENT));
+    }
+  }
+  if (editing)
+    return (
+      <input
+        autoFocus
+        aria-label="Project name"
+        value={name}
+        maxLength={120}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        className="w-64 rounded-md border border-accent bg-bg-subtle px-2 py-1 text-[14px] font-semibold text-fg outline-none"
+      />
+    );
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setName(title);
+        setEditing(true);
+      }}
+      title="Rename"
+      className="group flex max-w-[280px] items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-semibold text-fg hover:bg-bg-inset"
+    >
+      <span className="truncate">{title}</span>
+      <Pencil size={12} className="shrink-0 text-fg-tertiary opacity-0 group-hover:opacity-100" />
+    </button>
+  );
+}
+
+function IconBtn({
+  label,
+  onClick,
+  active,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      className={clsx(
+        "grid h-8 w-8 place-items-center rounded-md transition-colors hover:bg-bg-inset hover:text-fg",
+        active ? "text-fg" : "text-fg-tertiary",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+type ToolTab = "media" | "audio" | "text" | "effects";
+const TOOL_TABS: { key: ToolTab; label: string; icon: typeof Music; needsVideo: boolean }[] = [
+  { key: "media", label: "Media", icon: FolderOpen, needsVideo: false },
+  { key: "audio", label: "Audio", icon: Music, needsVideo: true },
+  { key: "text", label: "Text", icon: Type, needsVideo: true },
+  { key: "effects", label: "Effects", icon: AudioLines, needsVideo: true },
+];
+
+function TabBar<T extends string>({
+  tabs,
+  value,
+  onChange,
+  tour,
+}: {
+  tabs: { key: T; label: string; icon: typeof Music; disabled?: boolean; hint?: string }[];
+  value: T;
+  onChange: (k: T) => void;
+  tour?: string;
+}) {
+  return (
+    <div role="tablist" data-tour={tour} className="flex shrink-0 border-b border-border">
+      {tabs.map(({ key, label, icon: Icon, disabled, hint }) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={value === key}
+          disabled={disabled}
+          title={disabled ? hint : label}
+          onClick={() => onChange(key)}
+          className={clsx(
+            "flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2.5 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+            value === key
+              ? "border-accent text-fg"
+              : "border-transparent text-fg-tertiary hover:text-fg-secondary disabled:hover:text-fg-tertiary",
+          )}
+        >
+          <Icon size={14} />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// -- the studio (the workspace of one project) -------------------------------------------------
+
+export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; initialAsset?: string }) {
   const [thread, setThread] = useState<Job[]>(initialThread);
   const [voice, setVoice] = useState<string>(initialThread.at(-1)?.voice ?? "");
   const [events, setEvents] = useState<JobEvent[]>([]);
@@ -520,10 +529,17 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(initialAsset ?? null);
+  const [tool, setTool] = useState<ToolTab>("media");
+  const [side, setSide] = useState<"ai" | "props">("ai");
+  const [renamed, setRenamed] = useState<string | null>(null);
   const { items, upload, remove } = useUpload();
   const fileInput = useRef<HTMLInputElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const history = usePanelWidth("history", 232, 180, 480);
+  const tools = usePanelWidth("tools", 300, 240, 720);
+  const chat = usePanelWidth("chat", 380, 300, 960);
+  const pathname = usePathname();
 
   const last = thread.at(-1);
   const working = Boolean(last && !isTerminal(last.status));
@@ -532,10 +548,27 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
   const asking = last?.status === "needs_input";
 
   const handles = useMemo(() => Array.from(new Set(thread.flatMap((j) => j.assets))), [thread]);
-  const title =
+  const autoTitle =
     [...thread].reverse().find((j) => j.result?.title)?.result?.title ??
-    (thread[0]?.prompt ? thread[0].prompt.split(/\s+/).slice(0, 7).join(" ") : "New chat");
+    (thread[0]?.prompt ? thread[0].prompt.split(/\s+/).slice(0, 7).join(" ") : "New project");
+  const title = renamed ?? autoTitle;
   const assets = useAssets(handles);
+
+  // what the player shows: the picked version, else the newest result
+  const allOutputs = thread.flatMap((j) => outputsOf(j));
+  const latest = [...thread].reverse().find((j) => outputsOf(j).length > 0);
+  const shown = allOutputs.find((o) => o.handle === picked) ?? (latest ? outputsOf(latest)[0] : undefined);
+  const isVideo = shown?.media === "video";
+  const edit = useEdit(last?.id ?? "", isVideo && shown ? shown.handle : "");
+  const current = activityLines(events, !working)
+    .filter((l) => l.state === "doing")
+    .at(-1);
+  const files = handles.map((h) => ({
+    handle: h,
+    media: assets[h]?.media,
+    filename: assets[h]?.filename ?? "file",
+  }));
+  const sideTab = side === "props" && !isVideo ? "ai" : side;
 
   const onLive = useCallback((job: Job, evs: JobEvent[]) => {
     setThread((cur) => cur.map((j) => (j.id === job.id ? job : j)));
@@ -544,22 +577,17 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
   }, []);
 
   useEffect(() => {
-    // "Try again" on a job page lands here with that request to resend (one time).
-    const raw = sessionStorage.getItem(RETRY_STORAGE_KEY);
-    if (!raw) return;
-    sessionStorage.removeItem(RETRY_STORAGE_KEY);
-    try {
-      const retry = JSON.parse(raw) as { prompt?: string };
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time prefill on mount
-      if (retry.prompt) setText(retry.prompt);
-    } catch {
-      // ignore a corrupted payload
-    }
-  }, []);
-
-  useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [thread.length, events.length, last?.status]);
+  }, [thread.length, events.length, last?.status, sideTab, chat.width]);
+
+  /** A new job (a chat message, or a saved hand edit) joins the project. */
+  function adopt(job: Job) {
+    setThread((cur) => [...cur, job]);
+    setEvents([]);
+    setPicked(null);
+    window.dispatchEvent(new Event(CHATS_CHANGED_EVENT));
+    window.history.replaceState(null, "", `/studio/${job.id}`);
+  }
 
   async function send(message?: string) {
     const prompt = (message ?? text).trim();
@@ -578,14 +606,9 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
         }),
       });
       if (!res.ok) throw new Error((await readApiError(res)).message);
-      const job: Job = await res.json();
-      setThread((cur) => [...cur, job]);
-      setEvents([]);
-      window.dispatchEvent(new Event(CHATS_CHANGED_EVENT));
-      setPicked(null);
+      adopt(await res.json());
       setText("");
       items.forEach((i) => remove(i.id));
-      window.history.replaceState(null, "", `/studio/${job.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That didn't send. Please try again.");
     } finally {
@@ -593,37 +616,40 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
     }
   }
 
-  function startOver() {
-    setThread([]);
-    setVoice("");
-    setEvents([]);
-    setPicked(null);
-    setText("");
-    setError(null);
-    items.forEach((i) => remove(i.id));
-    window.history.replaceState(null, "", "/");
-  }
-
-  useEffect(() => {
-    window.addEventListener(NEW_CHAT_EVENT, startOver);
-    return () => window.removeEventListener(NEW_CHAT_EVENT, startOver);
-  });
-
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragging(false);
-    if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
+    if (e.dataTransfer.files.length) {
+      upload(e.dataTransfer.files);
+      setSide("ai");
+    }
   }
 
-  const placeholder = asking
-    ? "Type your answer…"
-    : thread.length
-      ? "Ask for a change…"
-      : "What should I make?";
+  function addFiles() {
+    setSide("ai");
+    if (chat.width === 0) chat.toggle();
+    // the picker lives in the assistant panel, which has to be on screen first
+    setTimeout(() => fileInput.current?.click(), 0);
+  }
+
+  const placeholder = asking ? "Type your answer…" : "Ask for a change…";
+  const activeId = pathname.startsWith("/studio/") ? (pathname.split("/")[2] ?? null) : null;
+  const lockedHint = "Available for videos";
+  const canSave = edit.dirty && isVideo && !working && !edit.saving && !edit.sending && edit.duration > 0;
+  const toolTabs = TOOL_TABS.map((t) => ({
+    ...t,
+    disabled: t.needsVideo && !isVideo,
+    hint: lockedHint,
+  }));
+  const sideTabs = [
+    { key: "ai" as const, label: "AI assistant", icon: Sparkles },
+    { key: "props" as const, label: "Properties", icon: SlidersHorizontal, disabled: !isVideo, hint: lockedHint },
+  ];
+  const sideError = edit.error || (edit.failed ? `${edit.failed.file.name}: ${edit.failed.error}` : "");
 
   return (
     <div
-      className="fixed inset-y-0 left-56 right-0 z-10 flex flex-col md:flex-row"
+      className="ws fixed inset-0 z-20 flex flex-col"
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
@@ -634,140 +660,242 @@ export function Studio({ initialThread }: { initialThread: Job[] }) {
       onDrop={onDrop}
     >
       {last && !isTerminal(last.status) ? <LiveJob key={last.id} job={last} onChange={onLive} /> : null}
+      <EditFileInput edit={edit} />
 
-      <Stage
-        thread={thread}
-        working={working}
-        activity={activityLines(events, !working)}
-        assets={assets}
-        pick={setPicked}
-        picked={picked}
-      />
-
-      <aside className="flex h-[55vh] w-full shrink-0 flex-col border-l border-border bg-bg md:h-full md:w-[420px]">
-        <header className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <p className="max-w-[260px] truncate text-[15px] font-semibold text-fg" title={title}>
-              {title}
-            </p>
-            <p className="text-[12px] text-fg-tertiary">Your AI video editor</p>
-          </div>
+      {/* top bar */}
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
+        <span className="hidden md:block">
+          <IconBtn label={history.width ? "Hide history" : "Show history"} onClick={history.toggle} active={history.width > 0}>
+            <PanelLeft size={17} />
+          </IconBtn>
+        </span>
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-fg-secondary transition-colors hover:bg-bg-inset hover:text-fg"
+        >
+          <ArrowLeft size={14} /> Projects
+        </Link>
+        <span className="mx-1 h-5 w-px bg-border" />
+        <ProjectName key={title} title={title} chatId={last?.id ?? ""} onRenamed={setRenamed} />
+        <div className="ml-auto flex items-center gap-1.5">
+          {edit.dirty && isVideo ? (
+            <span className="mr-1 hidden text-[12px] text-fg-tertiary lg:inline">Unsaved changes</span>
+          ) : null}
           <button
             type="button"
-            onClick={startOver}
-            className="inline-flex items-center gap-1 rounded-md border border-border-strong px-2.5 py-1.5 text-[12px] text-fg hover:bg-bg-subtle"
+            data-tour="help"
+            onClick={() => window.dispatchEvent(new Event(TOUR_EVENT))}
+            title="Show the guide"
+            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-fg-secondary transition-colors hover:bg-bg-inset hover:text-fg"
           >
-            <Plus size={13} /> New video
+            <CircleHelp size={15} /> <span className="hidden sm:inline">Help</span>
           </button>
-        </header>
-
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          {thread.length === 0 ? (
-            <div className="space-y-4">
-              <Bubble who="ai">
-                <p>
-                  Hi! 👋 Add your photos, videos or music (drag them here or tap the 📎), then tell
-                  me what you&apos;d like. You can also paste a link to a song.
-                </p>
-              </Bubble>
-              <div className="flex flex-wrap gap-1.5">
-                {EXAMPLES.map((ex) => (
-                  <button
-                    key={ex}
-                    type="button"
-                    onClick={() => setText(ex)}
-                    className="rounded-full border border-border-strong px-3 py-1.5 text-left text-[12px] text-fg-secondary hover:border-accent hover:text-fg"
-                  >
-                    {ex}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {shown ? (
+            <a
+              href={contentUrl(shown.handle)}
+              download={`atelier-${shown.handle.slice(6, 14)}${shown.ext}`}
+              data-tour="download"
+              className="flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-fg transition-colors hover:bg-bg-inset"
+            >
+              <Download size={14} /> <span className="hidden sm:inline">Download</span>
+            </a>
           ) : null}
-
-          {thread.map((job) => (
-            <Turn
-              key={job.id}
-              job={job}
-              events={job.id === last?.id ? events : []}
-              live={job.id === last?.id && events.length > 0}
-              assets={assets}
-              onShow={setPicked}
-              onRetry={(p) => send(p)}
-            />
-          ))}
-          <div ref={bottom} />
+          {isVideo ? (
+            <button
+              type="button"
+              data-tour="save"
+              disabled={!canSave}
+              onClick={() => edit.save(adopt)}
+              title={canSave ? "Save your edits as a new version" : "Make an edit to save a new version"}
+              className="flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
+            >
+              {edit.saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {edit.saving ? (edit.makingOnSave ? "Making the sound…" : "Saving…") : "Save version"}
+            </button>
+          ) : null}
+          <span className="hidden md:block">
+            <IconBtn
+              label={chat.width >= 640 ? "Make the assistant smaller" : "Make the assistant bigger"}
+              onClick={() => chat.set(chat.width >= 640 ? 380 : 720)}
+            >
+              {chat.width >= 640 ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </IconBtn>
+          </span>
+          <span className="hidden md:block">
+            <IconBtn label={chat.width ? "Hide assistant" : "Show assistant"} onClick={chat.toggle} active={chat.width > 0}>
+              <PanelRight size={17} />
+            </IconBtn>
+          </span>
         </div>
+      </header>
 
-        <div className="space-y-2 border-t border-border p-3">
-          {items.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {items.map((i) => (
-                <Attachment key={i.id} item={i} onRemove={() => remove(i.id)} />
-              ))}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+        {/* far left: history */}
+        {history.width ? (
+          <aside
+            style={{ "--w": `${history.width}px` } as React.CSSProperties}
+            className="hidden shrink-0 overflow-hidden bg-bg md:block md:w-[var(--w)]"
+          >
+            <History active={activeId} />
+          </aside>
+        ) : null}
+        <Splitter side="left" width={history.width} onChange={history.set} onToggle={history.toggle} label="history" />
+
+        {/* tools: media, audio, text, effects */}
+        {tools.width ? (
+          <aside
+            data-tour="tools"
+            style={{ "--w": `${tools.width}px` } as React.CSSProperties}
+            className="hidden shrink-0 flex-col overflow-hidden bg-bg md:flex md:w-[var(--w)]"
+          >
+            <TabBar tabs={toolTabs} value={tool} onChange={setTool} tour="tool-tabs" />
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 text-[13px] text-fg">
+              {tool === "media" ? (
+                <MediaPanel
+                  versions={allOutputs}
+                  files={files}
+                  shown={shown?.handle}
+                  onPick={setPicked}
+                  onAdd={addFiles}
+                />
+              ) : (
+                <fieldset disabled={working} className="m-0 min-w-0 border-0 p-0">
+                  {working ? <p className="mb-3 text-fg-tertiary">You can edit when I&apos;m done.</p> : null}
+                  {tool === "audio" ? <AudioPanel edit={edit} /> : null}
+                  {tool === "text" ? <TextPanel edit={edit} /> : null}
+                  {tool === "effects" ? <EffectsPanel edit={edit} /> : null}
+                </fieldset>
+              )}
             </div>
-          ) : null}
-          {error ? <p className="text-[12px] text-status-failed">{error}</p> : null}
-          {working ? (
-            <p className="flex items-center gap-1.5 text-[12px] text-fg-tertiary">
-              <Circle size={8} className="animate-pulse fill-accent text-accent" />
-              I&apos;m working on it. You can type your next idea while you wait.
+          </aside>
+        ) : null}
+        <Splitter side="left" width={tools.width} onChange={tools.set} onToggle={tools.toggle} label="tools" />
+
+        {/* centre: the player and, for videos, the timeline */}
+        <main data-tour="player" className="flex min-h-[60vh] min-w-0 shrink-0 flex-col bg-[var(--ws-canvas)] md:min-h-0 md:flex-1 md:shrink">
+          {sideError || edit.sending ? (
+            <p className={clsx("shrink-0 px-4 pt-2 text-[12.5px]", sideError ? "text-status-failed" : "text-fg-secondary")}>
+              {sideError || "Uploading your file…"}
             </p>
           ) : null}
-          <div className="flex items-end gap-2 rounded-xl border border-border-strong bg-bg px-2 py-1.5 focus-within:border-accent">
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              aria-label="Add photos, videos or music"
-              className="mb-0.5 rounded-md p-1.5 text-fg-secondary hover:bg-bg-subtle hover:text-fg"
-            >
-              <Paperclip size={18} />
-            </button>
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.length) upload(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              rows={Math.min(5, Math.max(1, text.split("\n").length))}
-              placeholder={placeholder}
-              aria-label="Message"
-              className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-[14px] text-fg outline-none placeholder:text-fg-tertiary"
-            />
-            <button
-              type="button"
-              onClick={() => send()}
-              disabled={!text.trim() || sending || working || uploading}
-              aria-label="Send"
-              className="mb-0.5 rounded-lg bg-accent p-2 text-on-accent transition-opacity disabled:opacity-30"
-            >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <SendHorizonal size={16} />}
-            </button>
+          <div className="relative flex min-h-0 flex-1 p-4">
+            {isVideo ? <EditPlayer edit={edit} /> : <Viewer shown={shown} />}
+            {working ? <WorkingBar text={current?.text ?? "Working on it"} /> : null}
           </div>
-          <VoicePicker value={voice} onChange={setVoice} />
-          {uploading ? <p className="text-[11px] text-fg-tertiary">Uploading… you can send once it finishes.</p> : null}
-        </div>
-      </aside>
+          {isVideo ? (
+            <EditTimeline edit={edit} locked={working} />
+          ) : shown ? (
+            <p className="shrink-0 border-t border-border px-4 py-2 text-[12.5px] text-fg-tertiary">{friendlyMedia(shown)}</p>
+          ) : null}
+        </main>
+
+        <Splitter side="right" width={chat.width} onChange={chat.set} onToggle={chat.toggle} label="assistant" />
+        {/* far right: the AI assistant (and the selected clip's properties) */}
+        {chat.width ? (
+          <aside
+            data-tour="assistant"
+            style={{ "--w": `${chat.width}px` } as React.CSSProperties}
+            className="flex h-[75vh] shrink-0 flex-col overflow-hidden border-t border-border bg-bg md:h-auto md:w-[var(--w)] md:border-t-0"
+          >
+            <TabBar tabs={sideTabs} value={sideTab} onChange={setSide} />
+            {sideTab === "props" ? (
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 text-[13px] text-fg">
+                <fieldset disabled={working} className="m-0 min-w-0 border-0 p-0">
+                  <PropertiesPanel edit={edit} />
+                </fieldset>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+                  {thread.map((job) => (
+                    <Turn
+                      key={job.id}
+                      job={job}
+                      events={job.id === last?.id ? events : []}
+                      live={job.id === last?.id && events.length > 0}
+                      assets={assets}
+                      onShow={setPicked}
+                      onRetry={(p) => send(p)}
+                    />
+                  ))}
+                  <div ref={bottom} />
+                </div>
+
+                <div className="space-y-2 border-t border-border p-3">
+                  {items.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {items.map((i) => (
+                        <Attachment key={i.id} item={i} onRemove={() => remove(i.id)} />
+                      ))}
+                    </div>
+                  ) : null}
+                  {error ? <p className="text-[12px] text-status-failed">{error}</p> : null}
+                  {working ? (
+                    <p className="flex items-center gap-1.5 text-[12px] text-fg-tertiary">
+                      <Circle size={8} className="animate-pulse fill-accent text-accent" />
+                      I&apos;m working on it. You can type your next idea while you wait.
+                    </p>
+                  ) : null}
+                  <div className="flex items-end gap-2 rounded-xl border border-border-strong bg-bg-subtle px-2 py-1.5 focus-within:border-accent">
+                    <button
+                      type="button"
+                      onClick={() => fileInput.current?.click()}
+                      aria-label="Add photos, videos or music"
+                      className="mb-0.5 rounded-md p-1.5 text-fg-secondary hover:bg-bg-inset hover:text-fg"
+                    >
+                      <Paperclip size={18} />
+                    </button>
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.length) upload(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                    <textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          send();
+                        }
+                      }}
+                      rows={Math.min(5, Math.max(1, text.split("\n").length))}
+                      placeholder={placeholder}
+                      aria-label="Message"
+                      className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-[14px] text-fg outline-none placeholder:text-fg-tertiary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => send()}
+                      disabled={!text.trim() || sending || working || uploading}
+                      aria-label="Send"
+                      className="mb-0.5 rounded-lg bg-accent p-2 text-on-accent transition-opacity disabled:opacity-30"
+                    >
+                      {sending ? <Loader2 size={16} className="animate-spin" /> : <SendHorizonal size={16} />}
+                    </button>
+                  </div>
+                  <VoicePicker value={voice} onChange={setVoice} />
+                  {uploading ? <p className="text-[11px] text-fg-tertiary">Uploading… you can send once it finishes.</p> : null}
+                </div>
+              </>
+            )}
+          </aside>
+        ) : null}
+      </div>
 
       {dragging ? (
-        <div className="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-accent bg-accent/10 text-accent backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-3 z-30 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-accent bg-accent/10 text-accent backdrop-blur-sm">
           <UploadCloud size={36} />
           <p className="text-lg font-semibold">Drop your files here</p>
         </div>
       ) : null}
+
+      <Tour id="studio" steps={STUDIO_TOUR} />
     </div>
   );
 }

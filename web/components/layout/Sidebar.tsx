@@ -172,7 +172,7 @@ function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: bool
   );
 }
 
-function RecentChats({ active }: { active: string | null }) {
+export function RecentChats({ active }: { active: string | null }) {
   const [chats, setChats] = useState<Conversation[] | null>(null);
   useEffect(() => {
     let alive = true;
@@ -213,9 +213,11 @@ export function Sidebar({ email }: { email: string }) {
   const activeChat = pathname.startsWith("/studio/") ? pathname.split("/")[2] ?? null : null;
 
   function newChat() {
-    window.dispatchEvent(new Event(NEW_CHAT_EVENT)); // resets the studio if it is open
     router.push("/");
   }
+
+  // a project has its own workspace (with its own History panel on the left)
+  if (pathname.startsWith("/studio")) return null;
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-bg-subtle">
@@ -252,6 +254,7 @@ export function Sidebar({ email }: { email: string }) {
           <Link
             key={href}
             href={href}
+            data-tour={`nav-${label.toLowerCase()}`}
             className={clsx(
               "flex items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
               pathname.startsWith(href)
