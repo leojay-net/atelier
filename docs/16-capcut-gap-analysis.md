@@ -136,7 +136,8 @@ voice changer, a large sound and sticker library, templates. Decide these only a
 | Voice changer (deep, high, robot, telephone, echo, whisper) | Built (`audio.voice_effect`); heard in the full preview and the saved version |
 | AI videos open with picture and sound already on separate layers | Built (`result.layers`, made after every finished video with sound); voice and music inside the sound are not separated |
 | Full preview (server draft of the whole edit) | Built, see section 6 |
-| Free keyframes (scale, rotation, opacity curves), masks drawn on video, several video tracks with their own timelines | Not built (engineering time, no paid service needed) |
+| Sticker keyframes (glide, grow or shrink, spin, fade), picture shape masks (circle, rounded, diamond), background removal for a still camera without any model | Built |
+| Free-form keyframe curves for every setting, hand-drawn masks, several video tracks with their own timelines | Not built (engineering time, no paid service needed) |
 
 ## 6. Full preview
 

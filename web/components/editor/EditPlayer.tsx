@@ -60,7 +60,7 @@ export function EditPlayer({ edit }: { edit: Edit }) {
   const maskPath = !m
     ? undefined
     : m.shape === "circle"
-      ? `ellipse(${50 * (1 - m.inset)}% ${50 * (1 - m.inset)}% at 50% 50%)`
+      ? `circle(${(1 - m.inset) * 50}cqmin at 50% 50%)`
       : m.shape === "rounded"
         ? `inset(${inset} round 15%)`
         : `polygon(50% ${m.inset * 50}%, ${100 - m.inset * 50}% 50%, 50% ${100 - m.inset * 50}%, ${m.inset * 50}% 50%)`;
