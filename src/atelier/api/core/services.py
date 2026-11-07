@@ -206,6 +206,24 @@ def delete_chat_files(org: Org, chain: list[Job]) -> int:
     return len(doomed)
 
 
+def draft_jobs(org: Org) -> Any:
+    return Job.objects.filter(org=org, parent__isnull=True, kind="spec", prompt="(draft preview)")
+
+
+def prune_drafts(org: Org, keep: int = 1) -> None:
+    """Preview renders are throwaway: keep the newest few and delete the rest with their files."""
+    old = list(draft_jobs(org).order_by("-created_at")[keep:])
+    if not old:
+        return
+    store = engine_for(org).store
+    for job in old:
+        hashes = {h.removeprefix("asset:") for h in output_handles(job)}
+        for a in Asset.objects.filter(org=org, hash__in=hashes, origin_job=job):
+            store.path(a.hash).unlink(missing_ok=True)
+            a.delete()
+    Job.objects.filter(pk__in=[j.pk for j in old]).delete()
+
+
 def thread_title(job: Job) -> str:
     """A conversation's name: the name the user gave it, else the newest AI title in it, else
     its first request."""
@@ -244,6 +262,10 @@ def library(org: Org, section: str, media: str, limit: int, offset: int) -> dict
     the way: found photos, generated pictures, voiceovers, linked files)."""
     assets = Asset.objects.filter(org=org).select_related("origin_job").order_by("-created_at")
     outputs: dict[str, Job] = {}
+    drafts = {
+        h.removeprefix("asset:") for j in draft_jobs(org).exclude(result=None) for h in output_handles(j)
+    }
+    assets = assets.exclude(hash__in=drafts)
     for job in Job.objects.filter(org=org).exclude(result=None).only("id", "result", "prompt"):
         for handle in output_handles(job):
             outputs.setdefault(handle.removeprefix("asset:"), job)

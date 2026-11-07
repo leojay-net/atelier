@@ -866,7 +866,7 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     voice_handle = None
     if body.voiceover and body.voiceover.handle:
         voice_handle = _resolve(engine, body.voiceover.handle).handle
-    elif body.voiceover and body.voiceover.text.strip():
+    elif body.voiceover and body.voiceover.text.strip() and not body.draft:
         info = _spoken(org, engine, body.voiceover.text, body.voiceover.voice)
         voice_handle = info.handle
         made.append((info.handle, "voiceover.mp3"))
@@ -874,7 +874,7 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     music_handle = None
     if body.music and body.music.handle:
         music_handle = _resolve(engine, body.music.handle).handle
-    elif body.music and body.music.compose.strip():
+    elif body.music and body.music.compose.strip() and not body.draft:
         info = _composed(engine, body.music.compose, length)
         music_handle = info.handle
         made.append((info.handle, "music.mp3"))
@@ -885,13 +885,15 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles
     )
     _validated(engine, spec)
+    if body.draft:
+        services.prune_drafts(org)
     job = Job.objects.create(
-        parent=parent,
+        parent=None if body.draft else parent,
         org=org,
         created_by=request.api_key,  # type: ignore[attr-defined]
         kind="spec",
         spec=spec,
-        prompt=edits.describe(body, parts, duration),
+        prompt=edits.DRAFT_PROMPT if body.draft else edits.describe(body, parts, duration),
         assets=[source.handle],
         voice=parent.voice,
     )

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Job, VoiceAccent } from "@/lib/types";
+import { isTerminal } from "@/lib/types";
 import { contentUrl } from "@/components/media/MediaPreview";
 import { readApiError } from "@/lib/errors";
 import { useUpload } from "@/hooks/useUpload";
@@ -289,6 +290,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   }, [voice, music, sounds, muted, clock]);
 
   // play only the kept parts
+  const holding = useRef(false);
   function onTime() {
     const v = video.current;
     if (!v) return;
@@ -299,6 +301,23 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     if (inside) {
       const rate = speed * (inside.speed ?? 1);
       if (Math.abs(v.playbackRate - rate) > 0.001) v.playbackRate = rate;
+      if ((inside.hold ?? 0) > 0 && t >= inside.end - 0.08 && !holding.current) {
+        // a held frame: the picture stands still (and the sound is silent) for a while
+        holding.current = true;
+        v.pause();
+        audio.current?.stop();
+        window.setTimeout(() => {
+          if (!holding.current) return;
+          holding.current = false;
+          const next = kept.find((p) => p !== inside && p.start >= inside.end - 1e-6);
+          if (next) {
+            v.currentTime = next.start;
+            void v.play();
+            startSound();
+          } else setPlaying(false);
+        }, ((inside.hold ?? 0) * 1000) / speed);
+        return;
+      }
     }
     if (!inside) {
       const next = kept.find((p) => p.start > t);
@@ -315,6 +334,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     const v = video.current;
     if (!v) return;
     if (playing) {
+      holding.current = false;
       v.pause();
       audio.current?.stop();
       setPlaying(false);
@@ -532,10 +552,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     (voice.on && voice.text && !voice.handle) || (music.on && music.mode === "compose" && !music.handle);
 
   // -- save ----------------------------------------------------------------------------------
-  async function save(onSaved: (job: Job) => void) {
-    setSaving(true);
-    setError("");
-    const body = {
+  /** Everything set in the editor, as the request the server renders. */
+  function editBody() {
+      return {
       source,
       parts: kept.map((p) => ({
         start: +p.start.toFixed(3),
@@ -603,6 +622,12 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       loudnorm,
       stabilize,
     };
+  }
+
+  async function save(onSaved: (job: Job) => void) {
+    setSaving(true);
+    setError("");
+    const body = editBody();
     try {
       const r = await fetch(`/api/proxy/jobs/${jobId}/edit`, {
         method: "POST",
@@ -663,6 +688,57 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     }, 350);
     return () => window.clearTimeout(timer);
   }, [sig, source]);
+
+  // -- the full preview: the server renders a quick draft of the whole edit (captions, noise
+  // clean-up, steadying, backwards parts, held frames, joined clips…) so all of it can be seen --
+  type Draft = { phase: "idle" | "rendering" | "ready" | "error"; handle: string; note: string; sig: string };
+  const [draftRaw, setDraft] = useState<Draft>({ phase: "idle", handle: "", note: "", sig: "" });
+  // a preview belongs to the edit it was made from: once you change something it is out of date
+  const draft: Draft = draftRaw.sig === sig ? draftRaw : { phase: "idle", handle: "", note: "", sig };
+  const [showDraft, setShowDraft] = useState(false);
+  const draftToken = useRef(0);
+  const needsServer =
+    captions.on ||
+    denoise ||
+    loudnorm ||
+    stabilize ||
+    clips.length > 0 ||
+    kept.some((p) => p.reverse || (p.hold ?? 0) > 0) ||
+    (transition !== null && kept.length > 1) ||
+    overlays.some((o) => o.moveTo && o.end !== null);
+  async function renderDraft() {
+    const token = ++draftToken.current;
+    const mine = sig;
+    setDraft({ phase: "rendering", handle: "", note: "", sig: mine });
+    try {
+      const r = await fetch(`/api/proxy/jobs/${jobId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...editBody(), draft: true }),
+      });
+      if (!r.ok) throw new Error((await readApiError(r)).message);
+      let job: Job = await r.json();
+      for (let i = 0; i < 80 && !isTerminal(job.status) && token === draftToken.current; i++) {
+        await new Promise((ok) => setTimeout(ok, 1500));
+        const g = await fetch(`/api/proxy/jobs/${job.id}`);
+        if (g.ok) job = await g.json();
+      }
+      if (token !== draftToken.current) return; // a newer change started another one
+      const out = job.result?.outputs ? Object.values(job.result.outputs)[0] : undefined;
+      if (job.status === "succeeded" && out) setDraft({ phase: "ready", handle: out.handle, note: "", sig: mine });
+      else setDraft({ phase: "error", handle: "", note: job.error || "The preview could not be made.", sig: mine });
+    } catch (e) {
+      if (token === draftToken.current)
+        setDraft({ phase: "error", handle: "", note: e instanceof Error ? e.message : "The preview could not be made.", sig: mine });
+    }
+  }
+  useEffect(() => {
+    draftToken.current += 1; // whatever is rendering is out of date now
+    if (!needsServer || !duration || !source || !jobId) return;
+    const timer = window.setTimeout(() => void renderDraft(), 2500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the edit itself changes
+  }, [sig, needsServer, duration, source]);
 
   function restore(raw: string) {
     const d = JSON.parse(raw) as typeof doc;
@@ -842,6 +918,11 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     makingOnSave,
     save,
     splitLayers,
+    draft,
+    showDraft: showDraft && draft.phase === "ready",
+    setShowDraft,
+    renderDraft,
+    needsServer,
     patchPart,
     applyCurve,
     clips,

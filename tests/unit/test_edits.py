@@ -434,3 +434,32 @@ def test_more_clips_play_after_the_edited_one(tmp_path: Path) -> None:
     assert [s["op"] for s in spec["steps"]].count("video.concat") == 1
     out = engine.store.path(engine.run(spec).outputs["out"].hash)
     assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+
+
+def test_a_draft_preview_is_not_a_version_and_is_cleaned_up() -> None:
+    _, api = make_org("acme")
+    clip = api.upload("clip.mp4", CLIP.read_bytes()).json()["handle"]
+    spec = {"in": clip, "ops": [["export", {"preset": "web_h264"}]]}
+    body = json.dumps({"title": "My Clip", "summary": "Done.", "warnings": [], "question": ""})
+    api_support.model = ScriptedModel(
+        message([tool_use("run_pipeline", {"spec": spec})], "tool_use"),
+        message([text(body)], "end_turn"),
+    )
+    first = api.post("/jobs", {"prompt": "tidy my clip", "assets": [clip]}).json()
+    (video,) = [o["handle"] for o in first["result"]["outputs"].values()]
+    drafts = []
+    for n in range(4):
+        res = api.post(
+            f"/jobs/{first['id']}/edit",
+            {"source": video, "draft": True, "parts": [{"start": 0, "end": 2 + n * 0.1, "reverse": True}],
+             "voiceover": {"text": "never spoken in a draft"}},
+        )  # fmt: skip
+        assert res.status_code == 202, res.content
+        drafts.append(res.json())
+    assert all(d["status"] == "succeeded" and d["parent"] is None for d in drafts)
+    (chat,) = api.get("/conversations").json()["items"]
+    assert chat["id"] == first["id"]  # drafts are not chats
+    gone = [d["id"] for d in drafts[:2]]
+    assert all(api.get(f"/jobs/{i}").status_code == 404 for i in gone)  # only the newest two stay
+    created = api.get("/library?section=created").json()["items"]
+    assert all(i.get("job") in (None, first["id"]) or i["job"] == first["id"] for i in created)
