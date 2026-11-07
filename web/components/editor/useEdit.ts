@@ -7,7 +7,7 @@ import { readApiError } from "@/lib/errors";
 import { useUpload } from "@/hooks/useUpload";
 import { PreviewAudio } from "./previewAudio";
 
-export type Part = { start: number; end: number };
+export type Part = { start: number; end: number; speed?: number };
 export type Shape = "original" | "portrait" | "square" | "landscape";
 export type Position = "top" | "upper_safe" | "middle" | "lower_safe" | "bottom";
 export type TextItem = {
@@ -17,12 +17,45 @@ export type TextItem = {
   end: number;
   position: Position;
   style: "bold_pop" | "clean";
+  color?: string;
+  animate?: "auto" | "none" | "rise" | "pop";
 };
+export type Adjust = { brightness: number; contrast: number; saturation: number; gamma: number };
+export const NEUTRAL: Adjust = { brightness: 0, contrast: 1, saturation: 1, gamma: 1 };
+/** Named looks: just sets of the four numbers, so the AI and the editor share them. */
+export const FILTERS: { key: string; label: string; adjust: Adjust }[] = [
+  { key: "none", label: "Original", adjust: NEUTRAL },
+  { key: "vivid", label: "Vivid", adjust: { brightness: 0.03, contrast: 1.15, saturation: 1.45, gamma: 1 } },
+  { key: "warm", label: "Warm", adjust: { brightness: 0.05, contrast: 1.05, saturation: 1.15, gamma: 1.08 } },
+  { key: "cool", label: "Cool", adjust: { brightness: -0.02, contrast: 1.08, saturation: 0.95, gamma: 0.94 } },
+  { key: "bw", label: "Black & white", adjust: { brightness: 0, contrast: 1.2, saturation: 0, gamma: 1 } },
+  { key: "fade", label: "Faded", adjust: { brightness: 0.08, contrast: 0.82, saturation: 0.8, gamma: 1.1 } },
+  { key: "drama", label: "Dramatic", adjust: { brightness: -0.04, contrast: 1.45, saturation: 1.1, gamma: 0.9 } },
+  { key: "bright", label: "Bright", adjust: { brightness: 0.12, contrast: 1.05, saturation: 1.1, gamma: 1.1 } },
+];
+export type Anchor =
+  | "top_left" | "top_center" | "top_right"
+  | "center_left" | "center" | "center_right"
+  | "bottom_left" | "bottom_center" | "bottom_right";
+export type Overlay = {
+  id: number;
+  handle: string;
+  name: string;
+  anchor: Anchor;
+  scale: number;
+  opacity: number;
+  start: number;
+  end: number | null;
+};
+export const TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright", "circlecrop", "fadeblack", "fadewhite"] as const;
+export type Transition = (typeof TRANSITIONS)[number];
+export const TRANSITION_SECONDS = 0.5;
+export type TextItemExtra = { color?: string; animate?: "auto" | "none" | "rise" | "pop" };
 export type Sound = { id: number; at: number; kind: "whoosh" | "pop" | "riser" | "impact" };
 
 /** The layers (tracks) you can mute or delete one by one. */
-export type Layer = "video" | "text" | "effects" | "voice" | "music";
-const UNMUTED: Record<Layer, boolean> = { video: false, text: false, effects: false, voice: false, music: false };
+export type Layer = "video" | "text" | "stickers" | "effects" | "voice" | "music";
+const UNMUTED: Record<Layer, boolean> = { video: false, text: false, stickers: false, effects: false, voice: false, music: false };
 
 export const SOUNDS: Sound["kind"][] = ["whoosh", "pop", "riser", "impact"];
 export const RATIO: Record<Exclude<Shape, "original">, number> = {
@@ -95,8 +128,18 @@ export function useEdit(jobId: string, source: string) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { items: uploads, upload } = useUpload();
-  const [uploadFor, setUploadFor] = useState<"voice" | "music" | null>(null);
+  const [uploadFor, setUploadFor] = useState<"voice" | "music" | "sticker" | null>(null);
   const [muted, setMuted] = useState(UNMUTED);
+  const [adjust, setAdjust] = useState<Adjust>(NEUTRAL);
+  const [filter, setFilter] = useState("none");
+  const [fadeIn, setFadeIn] = useState(0);
+  const [fadeOut, setFadeOut] = useState(0);
+  const [transition, setTransition] = useState<Transition | null>(null);
+  const [captions, setCaptions] = useState<{ on: boolean; style: "bold_pop" | "clean" | "minimal_lower" }>({ on: false, style: "bold_pop" });
+  const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [denoise, setDenoise] = useState(false);
+  const [loudnorm, setLoudnorm] = useState(false);
+  const [stabilize, setStabilize] = useState(false);
   const [making, setMaking] = useState<"" | "voice" | "music">("");
 
   // another video was picked: start from a clean slate (set during render, the React way)
@@ -115,6 +158,16 @@ export function useEdit(jobId: string, source: string) {
     setMusic(MUSIC0);
     setSounds([]);
     setMuted(UNMUTED);
+    setAdjust(NEUTRAL);
+    setFilter("none");
+    setFadeIn(0);
+    setFadeOut(0);
+    setTransition(null);
+    setCaptions({ on: false, style: "bold_pop" });
+    setOverlays([]);
+    setDenoise(false);
+    setLoudnorm(false);
+    setStabilize(false);
     setError("");
   }
 
@@ -142,7 +195,12 @@ export function useEdit(jobId: string, source: string) {
     used.current.add(done.id);
     const handle = done.asset.handle;
     const name = done.file.name;
-    if (uploadFor === "voice") setVoice((v) => ({ ...v, on: true, ai: false, handle, name, text: "" }));
+    if (uploadFor === "sticker")
+      setOverlays((cur) => [
+        ...cur,
+        { id: nextId++, handle, name, anchor: "top_right", scale: 0.25, opacity: 1, start: 0, end: null },
+      ]);
+    else if (uploadFor === "voice") setVoice((v) => ({ ...v, on: true, ai: false, handle, name, text: "" }));
     else setMusic((m) => ({ ...m, on: true, ai: false, mode: "upload", handle, name }));
     setUploadFor(null);
   }, [uploads, uploadFor]);
@@ -153,15 +211,23 @@ export function useEdit(jobId: string, source: string) {
     () => (parts.length ? parts : [{ start: 0, end: duration }]),
     [parts, duration],
   );
-  const length = kept.reduce((s, p) => s + (p.end - p.start), 0) / speed;
+  // a crossfade between cut parts, unless a part is too short for it (as on the server)
+  const overlap =
+    transition && kept.length > 1 && kept.every((p) => (p.end - p.start) / (p.speed ?? 1) >= 2 * TRANSITION_SECONDS + 0.1)
+      ? TRANSITION_SECONDS
+      : 0;
+  const length =
+    (kept.reduce((s, p) => s + (p.end - p.start) / (p.speed ?? 1), 0) - overlap * (kept.length - 1)) / speed;
 
-  // source time → edited time (cuts removed, speed applied), like the server's Clock
+  // source time → edited time (cuts removed, each part's speed, then the whole speed), like the
+  // server's Clock. The preview does not draw the crossfade, so it leaves the overlap out.
   const clock = useCallback(
     (t: number): number | null => {
       let before = 0;
       for (const p of kept) {
-        if (t < p.end) return (before + Math.max(0, t - p.start)) / speed;
-        before += p.end - p.start;
+        const sp = p.speed ?? 1;
+        if (t < p.end) return (before + Math.max(0, t - p.start) / sp) / speed;
+        before += (p.end - p.start) / sp;
       }
       return null;
     },
@@ -198,6 +264,10 @@ export function useEdit(jobId: string, source: string) {
     setNow(t);
     if (!playing) return;
     const inside = kept.find((p) => t >= p.start && t < p.end);
+    if (inside) {
+      const rate = speed * (inside.speed ?? 1);
+      if (Math.abs(v.playbackRate - rate) > 0.001) v.playbackRate = rate;
+    }
     if (!inside) {
       const next = kept.find((p) => p.start > t);
       if (next) v.currentTime = next.start;
@@ -319,12 +389,16 @@ export function useEdit(jobId: string, source: string) {
       kept.flatMap((p) =>
         now > p.start + 0.2 && now < p.end - 0.2
           ? [
-              { start: p.start, end: now },
-              { start: now, end: p.end },
+              { start: p.start, end: now, speed: p.speed },
+              { start: now, end: p.end, speed: p.speed },
             ]
           : [p],
       ),
     );
+  }
+  /** One kept part at its own speed (on top of the whole-video speed). */
+  function setPartSpeed(i: number, sp: number) {
+    setParts(() => kept.map((p, j) => (j === i ? { ...p, speed: sp } : p)));
   }
   function removePart(i: number) {
     if (kept.length === 1) return setError("Keep at least one part of the video.");
@@ -370,13 +444,25 @@ export function useEdit(jobId: string, source: string) {
   function removeLayer(k: Layer) {
     if (k === "text") setTexts([]);
     else if (k === "effects") setSounds([]);
+    else if (k === "stickers") setOverlays([]);
     else if (k === "voice") setVoice(VOICE0);
     else if (k === "music") setMusic(MUSIC0);
     else setMuted((m) => ({ ...m, video: true }));
     if (k !== "video") setMuted((m) => ({ ...m, [k]: false }));
   }
 
+  const looks = JSON.stringify(adjust) !== JSON.stringify(NEUTRAL);
   const dirty =
+    looks ||
+    fadeIn > 0 ||
+    fadeOut > 0 ||
+    (transition !== null && kept.length > 1) ||
+    captions.on ||
+    overlays.length > 0 ||
+    denoise ||
+    loudnorm ||
+    stabilize ||
+    kept.some((p) => (p.speed ?? 1) !== 1) ||
     muted.video ||
     parts.length > 0 ||
     shape !== "original" ||
@@ -396,7 +482,7 @@ export function useEdit(jobId: string, source: string) {
     setError("");
     const body = {
       source,
-      parts: kept.map((p) => ({ start: +p.start.toFixed(3), end: +p.end.toFixed(3) })),
+      parts: kept.map((p) => ({ start: +p.start.toFixed(3), end: +p.end.toFixed(3), speed: p.speed ?? 1 })),
       speed,
       shape,
       focus_x: focus[0],
@@ -410,6 +496,8 @@ export function useEdit(jobId: string, source: string) {
           end: t.end,
           position: t.position,
           style: t.style,
+          ...(t.color ? { color: t.color } : {}),
+          ...(t.animate && t.animate !== "auto" ? { animate: t.animate } : {}),
         })),
       voiceover:
         voice.on && !muted.voice && (voice.handle || voice.text.trim())
@@ -431,6 +519,22 @@ export function useEdit(jobId: string, source: string) {
             }
           : null,
       sounds: (muted.effects ? [] : sounds).map((s) => ({ at: s.at, kind: s.kind })),
+      adjust,
+      fade_in: fadeIn,
+      fade_out: fadeOut,
+      transition: kept.length > 1 ? transition : null,
+      captions: captions.on ? { style: captions.style } : null,
+      overlays: (muted.stickers ? [] : overlays).map((o) => ({
+        handle: o.handle,
+        anchor: o.anchor,
+        scale: o.scale,
+        opacity: o.opacity,
+        start: o.start,
+        ...(o.end !== null ? { end: o.end } : {}),
+      })),
+      denoise,
+      loudnorm,
+      stabilize,
     };
     try {
       const r = await fetch(`/api/proxy/jobs/${jobId}/edit`, {
@@ -448,6 +552,98 @@ export function useEdit(jobId: string, source: string) {
     }
   }
 
+  // -- undo / redo: a snapshot of everything you can set, taken a moment after each change ----
+  const doc = {
+    parts, shape, focus, volume, speed, texts, voice, music, sounds, muted, adjust, filter,
+    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize,
+  };
+  const sig = JSON.stringify(doc);
+  const history = useRef<{ source: string; stack: string[]; at: number }>({ source: "", stack: [], at: -1 });
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const h = history.current;
+    if (h.source !== source) {
+      history.current = { source, stack: [sig], at: 0 };
+      bump((n) => n + 1);
+      return;
+    }
+    if (h.stack[h.at] === sig) return;
+    const timer = window.setTimeout(() => {
+      const cur = history.current;
+      if (cur.stack[cur.at] === sig) return;
+      cur.stack = [...cur.stack.slice(0, cur.at + 1), sig].slice(-60);
+      cur.at = cur.stack.length - 1;
+      bump((n) => n + 1);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [sig, source]);
+
+  function restore(raw: string) {
+    const d = JSON.parse(raw) as typeof doc;
+    setParts(d.parts);
+    setShape(d.shape);
+    setFocus(d.focus);
+    setVolume(d.volume);
+    setSpeed(d.speed);
+    setTexts(d.texts);
+    setVoice(d.voice);
+    setMusic(d.music);
+    setSounds(d.sounds);
+    setMuted(d.muted);
+    setAdjust(d.adjust);
+    setFilter(d.filter);
+    setFadeIn(d.fadeIn);
+    setFadeOut(d.fadeOut);
+    setTransition(d.transition);
+    setCaptions(d.captions);
+    setOverlays(d.overlays);
+    setDenoise(d.denoise);
+    setLoudnorm(d.loudnorm);
+    setStabilize(d.stabilize);
+  }
+  function undo() {
+    const h = history.current;
+    // a change still waiting for its snapshot is undone first
+    if (h.stack[h.at] !== sig) {
+      h.stack = [...h.stack.slice(0, h.at + 1), sig].slice(-60);
+      h.at = h.stack.length - 1;
+    }
+    if (h.at > 0) {
+      h.at -= 1;
+      restore(h.stack[h.at]!);
+      bump((n) => n + 1);
+    }
+  }
+  function redo() {
+    const h = history.current;
+    if (h.at < h.stack.length - 1) {
+      h.at += 1;
+      restore(h.stack[h.at]!);
+      bump((n) => n + 1);
+    }
+  }
+  /* eslint-disable react-hooks/refs -- the history lives in a ref; `bump` re-renders when it moves */
+  const canUndo = history.current.at > 0 || history.current.stack[history.current.at] !== sig;
+  const canRedo = history.current.at < history.current.stack.length - 1;
+  /* eslint-enable react-hooks/refs */
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable]")) return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
+
   // callback refs, so the pieces of the editor can attach to the elements without holding refs
   const videoRef = useCallback((el: HTMLVideoElement | null) => {
     video.current = el;
@@ -464,7 +660,7 @@ export function useEdit(jobId: string, source: string) {
     fileInput.current = el;
   }, []);
 
-  function pickFile(for_: "voice" | "music") {
+  function pickFile(for_: "voice" | "music" | "sticker") {
     setUploadFor(for_);
     fileInput.current?.click();
   }
@@ -513,6 +709,31 @@ export function useEdit(jobId: string, source: string) {
     sending,
     upload,
     pickFile,
+    adjust,
+    setAdjust,
+    filter,
+    setFilter,
+    fadeIn,
+    setFadeIn,
+    fadeOut,
+    setFadeOut,
+    transition,
+    setTransition,
+    captions,
+    setCaptions,
+    overlays,
+    setOverlays,
+    denoise,
+    setDenoise,
+    loudnorm,
+    setLoudnorm,
+    stabilize,
+    setStabilize,
+    setPartSpeed,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     muted,
     toggleMute,
     removeLayer,

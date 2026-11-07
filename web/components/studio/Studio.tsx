@@ -26,8 +26,10 @@ import {
   Save,
   SendHorizonal,
   SlidersHorizontal,
+  Smile,
   Sparkles,
   Type,
+  Wand2,
   UploadCloud,
   X,
   XCircle,
@@ -48,7 +50,9 @@ import {
   AudioPanel,
   EditFileInput,
   EffectsPanel,
+  FiltersPanel,
   PropertiesPanel,
+  StickersPanel,
   TextPanel,
 } from "@/components/editor/EditPanels";
 import { History } from "@/components/workspace/History";
@@ -474,12 +478,14 @@ function IconBtn({
   );
 }
 
-type ToolTab = "media" | "audio" | "text" | "effects";
+type ToolTab = "media" | "audio" | "text" | "stickers" | "effects" | "filters";
 const TOOL_TABS: { key: ToolTab; label: string; icon: typeof Music; needsVideo: boolean }[] = [
   { key: "media", label: "Media", icon: FolderOpen, needsVideo: false },
   { key: "audio", label: "Audio", icon: Music, needsVideo: true },
   { key: "text", label: "Text", icon: Type, needsVideo: true },
+  { key: "stickers", label: "Stickers", icon: Smile, needsVideo: true },
   { key: "effects", label: "Effects", icon: AudioLines, needsVideo: true },
+  { key: "filters", label: "Filters", icon: Wand2, needsVideo: true },
 ];
 
 function TabBar<T extends string>({
@@ -494,7 +500,7 @@ function TabBar<T extends string>({
   tour?: string;
 }) {
   return (
-    <div role="tablist" data-tour={tour} className="flex shrink-0 border-b border-border">
+    <div role="tablist" data-tour={tour} className="@container flex shrink-0 border-b border-border">
       {tabs.map(({ key, label, icon: Icon, disabled, hint }) => (
         <button
           key={key}
@@ -505,7 +511,7 @@ function TabBar<T extends string>({
           title={disabled ? hint : label}
           onClick={() => onChange(key)}
           className={clsx(
-            "flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2.5 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+            "flex flex-1 flex-col items-center justify-center gap-0.5 border-b-2 px-1 py-2 text-[11px] font-medium @[420px]:flex-row @[420px]:gap-1.5 @[420px]:px-2 @[420px]:py-2.5 @[420px]:text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-35",
             value === key
               ? "border-accent text-fg"
               : "border-transparent text-fg-tertiary hover:text-fg-secondary disabled:hover:text-fg-tertiary",
@@ -763,7 +769,9 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
                   {working ? <p className="mb-3 text-fg-tertiary">You can edit when I&apos;m done.</p> : null}
                   {tool === "audio" ? <AudioPanel edit={edit} /> : null}
                   {tool === "text" ? <TextPanel edit={edit} /> : null}
+                  {tool === "stickers" ? <StickersPanel edit={edit} /> : null}
                   {tool === "effects" ? <EffectsPanel edit={edit} /> : null}
+                  {tool === "filters" ? <FiltersPanel edit={edit} /> : null}
                 </fieldset>
               )}
             </div>

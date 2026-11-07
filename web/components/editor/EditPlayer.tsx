@@ -43,6 +43,12 @@ export function EditPlayer({ edit }: { edit: Edit }) {
     area[0] / Math.max(1, area[1]) > ratio
       ? [area[1] * ratio, area[1]]
       : [area[0], area[0] / ratio];
+  const a = edit.adjust;
+  const lookCss =
+    edit.filter === "none"
+      ? undefined
+      : `brightness(${1 + a.brightness}) contrast(${a.contrast}) saturate(${a.saturation})`;
+  const stickers = edit.muted.stickers ? [] : edit.overlays.filter((o) => now >= o.start && (o.end === null || now < o.end));
   const shown = (edit.muted.text ? [] : texts).filter((t) => now >= t.start && now < t.end);
 
   return (
@@ -75,16 +81,41 @@ export function EditPlayer({ edit }: { edit: Edit }) {
           onEnded={() => edit.setPlaying(false)}
           onClick={edit.toggle}
           className="h-full w-full cursor-pointer object-cover"
-          style={{ objectPosition: `${focus[0] * 100}% ${focus[1] * 100}%` }}
+          style={{
+            objectPosition: `${focus[0] * 100}% ${focus[1] * 100}%`,
+            filter: lookCss,
+          }}
         />
+        {stickers.map((o) => {
+          const [v, h] = o.anchor.split("_") as [string, string | undefined];
+          const row = o.anchor === "center" ? "center" : v;
+          const col = o.anchor === "center" ? "center" : (h ?? "center");
+          return (
+            // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL
+            <img
+              key={o.id}
+              src={contentUrl(o.handle)}
+              alt=""
+              className="pointer-events-none absolute"
+              style={{
+                width: `${o.scale * 100}%`,
+                opacity: o.opacity,
+                margin: "4%",
+                ...(row === "top" ? { top: 0 } : row === "bottom" ? { bottom: 0 } : { top: "50%", transform: "translateY(-50%)" }),
+                ...(col === "left" ? { left: 0 } : col === "right" ? { right: 0 } : { left: "50%", transform: `${row === "center" ? "translate(-50%,-50%)" : "translateX(-50%)"}` }),
+              }}
+            />
+          );
+        })}
         {shown.map((t) => (
           <p
             key={t.id}
             className={clsx(
               "pointer-events-none absolute inset-x-[8%] text-center font-bold leading-tight",
-              t.style === "bold_pop" ? "text-[#ffe14d]" : "text-white",
+              !t.color && (t.style === "bold_pop" ? "text-[#ffe14d]" : "text-white"),
             )}
             style={{
+              color: t.color,
               top: TOP[t.position],
               fontSize: "clamp(14px, 4.5cqh, 42px)",
               textShadow: "0 0 3px #000, 0 2px 6px #000",

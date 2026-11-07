@@ -285,3 +285,53 @@ def test_videos_can_be_seeked_byte_ranges() -> None:
         f"/api/v1/assets/{clip}/content", HTTP_RANGE=f"bytes={len(data) + 5}-", **api.headers
     )
     assert bad.status_code == 416
+
+
+def test_the_clock_follows_part_speeds_and_crossfades() -> None:
+    # part 1: 2 s at 2x = 1 s; part 2: 2 s at normal speed; 0.5 s of crossfade between them
+    clock = Clock([(0.0, 2.0), (3.0, 5.0)], speed=1.0, speeds=[2.0, 1.0], overlap=0.5)
+    assert clock.length == pytest.approx(2.5)
+    assert clock(1.0) == pytest.approx(0.5)
+    assert clock(4.0) == pytest.approx(1.0 + 1.0 - 0.5)
+
+
+def test_looks_fades_cleanup_stickers_and_transitions_render(tmp_path: Path) -> None:
+    from PIL import Image
+
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    png = tmp_path / "sticker.png"
+    Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(png)
+    sticker = engine.store.put_file(png).handle
+    edit = EditIn(
+        source=clip,
+        parts=[{"start": 0, "end": 2.4, "speed": 2}, {"start": 2.6, "end": 4}],
+        transition="fade",
+        adjust={"brightness": 0.1, "contrast": 1.2, "saturation": 0.0},  # a black-and-white look
+        fade_in=0.3,
+        fade_out=0.3,
+        denoise=True,
+        loudnorm=True,
+        overlays=[{"handle": sticker, "anchor": "bottom_right", "scale": 0.2, "start": 0.5}],
+        texts=[{"text": "HI", "start": 0, "end": 1, "color": "#ff0000", "animate": "none"}],
+    )
+    spec = build_spec(edit, 4.0, overlay_handles=[sticker])
+    ops = [s["op"] for s in spec["steps"]]
+    assert "video.color" in ops and "video.overlay" in ops and "video.fade" in ops
+    assert ops.count("audio.extract") == 2  # one for the denoise, one for the loudness
+    assert next(s for s in spec["steps"] if s["op"] == "video.concat")["args"]["fade"] == 0.5
+    out = engine.store.path(engine.run(spec).outputs["out"].hash)
+    length = float(probe(out)["format"]["duration"])
+    # 2.4 s at 2x = 1.2 s, plus 1.4 s, minus the 0.5 s crossfade
+    assert length == pytest.approx(1.2 + 1.4 - 0.5, abs=0.15)
+    assert "a new look" in describe(edit, kept_parts(edit, 4.0), 4.0)
+
+
+def test_captions_and_stabilise_make_a_valid_spec(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    edit = EditIn(source=clip, captions={"style": "bold_pop"}, stabilize=True)
+    spec = build_spec(edit, 4.0)
+    ops = [s["op"] for s in spec["steps"]]
+    assert ops == ["video.stabilize", "transcribe", "video.captions", "export"]
+    engine.validate(spec)  # the speech model is not run here; the wiring must be valid

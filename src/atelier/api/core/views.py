@@ -850,7 +850,8 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         parts = edits.kept_parts(body, duration)
     except ValueError as e:
         raise ApiError(422, "bad_request", str(e)) from None
-    length = edits.Clock(parts, body.speed).length
+    speeds = edits.part_speeds(body, parts)
+    length = edits.Clock(parts, body.speed, speeds, edits.overlap_for(body, parts, speeds)).length
     services.check_rate(request.api_key)  # type: ignore[attr-defined]
     services.check_quota(org)
     made: list[tuple[str, str]] = []
@@ -871,7 +872,11 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         music_handle = info.handle
         made.append((info.handle, "music.mp3"))
 
-    spec = edits.build_spec(body, duration, voice_handle, music_handle)
+    overlay_handles = [_resolve(engine, o.handle).handle for o in body.overlays]
+    has_audio = bool(engine.probe(source).get("audio"))
+    spec = edits.build_spec(
+        body, duration, voice_handle, music_handle, has_audio, overlay_handles
+    )
     _validated(engine, spec)
     job = Job.objects.create(
         parent=parent,
