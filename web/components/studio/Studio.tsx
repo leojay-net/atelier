@@ -431,7 +431,7 @@ function ProjectName({ title, chatId, onRenamed }: { title: string; chatId: stri
           if (e.key === "Enter") commit();
           if (e.key === "Escape") setEditing(false);
         }}
-        className="w-64 rounded-md border border-accent bg-bg-subtle px-2 py-1 text-[14px] font-semibold text-fg outline-none"
+        className="w-40 rounded-md border border-accent sm:w-64 bg-bg-subtle px-2 py-1 text-[14px] font-semibold text-fg outline-none"
       />
     );
   return (
@@ -442,7 +442,7 @@ function ProjectName({ title, chatId, onRenamed }: { title: string; chatId: stri
         setEditing(true);
       }}
       title="Rename"
-      className="group flex max-w-[280px] items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-semibold text-fg hover:bg-bg-inset"
+      className="group flex min-w-0 max-w-[280px] items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-semibold text-fg hover:bg-bg-inset"
     >
       <span className="truncate">{title}</span>
       <Pencil size={12} className="shrink-0 text-fg-tertiary opacity-0 group-hover:opacity-100" />
@@ -703,11 +703,11 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
           href="/"
           className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-fg-secondary transition-colors hover:bg-bg-inset hover:text-fg"
         >
-          <ArrowLeft size={14} /> Projects
+          <ArrowLeft size={14} /> <span className="hidden sm:inline">Projects</span>
         </Link>
-        <span className="mx-1 h-5 w-px bg-border" />
+        <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
         <ProjectName key={title} title={title} chatId={last?.id ?? ""} onRenamed={setRenamed} />
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {edit.dirty && isVideo ? (
             <span className="mr-1 hidden text-[12px] text-fg-tertiary lg:inline">Unsaved changes</span>
           ) : null}
@@ -740,7 +740,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
               className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-[13px] font-semibold text-on-accent shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[background-color,opacity,transform] hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
             >
               {edit.saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {edit.saving ? (edit.makingOnSave ? "Making the sound…" : "Saving…") : "Save version"}
+              <span className="hidden sm:inline">{edit.saving ? (edit.makingOnSave ? "Making the sound…" : "Saving…") : "Save version"}</span>
             </button>
           ) : null}
           <span className="hidden md:block">
