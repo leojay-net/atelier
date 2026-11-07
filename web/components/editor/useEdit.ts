@@ -7,7 +7,17 @@ import { readApiError } from "@/lib/errors";
 import { useUpload } from "@/hooks/useUpload";
 import { PreviewAudio } from "./previewAudio";
 
-export type Part = { start: number; end: number; speed?: number };
+export type Part = { start: number; end: number; speed?: number; reverse?: boolean; hold?: number };
+/** Another video played after the edited one. */
+export type Clip = { id: number; handle: string; name: string; start: number; end: number | null; seconds: number };
+/** Speed curves: a part is cut into equal pieces that play at these speeds. */
+export const CURVES: { key: string; label: string; speeds: number[] }[] = [
+  { key: "hero", label: "Hero time", speeds: [1, 0.35, 1] },
+  { key: "bullet", label: "Bullet", speeds: [2, 0.25, 2] },
+  { key: "montage", label: "Montage", speeds: [1, 2, 1] },
+  { key: "ramp_up", label: "Ramp up", speeds: [0.5, 1, 2] },
+  { key: "ramp_down", label: "Ramp down", speeds: [2, 1, 0.5] },
+];
 export type Shape = "original" | "portrait" | "square" | "landscape";
 export type Position = "top" | "upper_safe" | "middle" | "lower_safe" | "bottom";
 export type TextItem = {
@@ -46,6 +56,7 @@ export type Overlay = {
   opacity: number;
   start: number;
   end: number | null;
+  moveTo?: Anchor | null;
 };
 export const TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright", "circlecrop", "fadeblack", "fadewhite"] as const;
 export type Transition = (typeof TRANSITIONS)[number];
@@ -131,7 +142,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { items: uploads, upload } = useUpload();
-  const [uploadFor, setUploadFor] = useState<"voice" | "music" | "sticker" | null>(null);
+  const [uploadFor, setUploadFor] = useState<"voice" | "music" | "sticker" | "clip" | null>(null);
   const [muted, setMuted] = useState(UNMUTED);
   const [adjust, setAdjust] = useState<Adjust>(NEUTRAL);
   const [filter, setFilter] = useState("none");
@@ -143,6 +154,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [denoise, setDenoise] = useState(false);
   const [loudnorm, setLoudnorm] = useState(false);
   const [stabilize, setStabilize] = useState(false);
+  const [clips, setClips] = useState<Clip[]>([]);
+  const [bpm, setBpm] = useState(0);
+  const [snap, setSnap] = useState(false);
   const [making, setMaking] = useState<"" | "voice" | "music">("");
 
   // another video was picked: start from a clean slate (set during render, the React way)
@@ -171,6 +185,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setDenoise(false);
     setLoudnorm(false);
     setStabilize(false);
+    setClips([]);
+    setBpm(0);
+    setSnap(false);
     setError("");
   }
 
@@ -198,7 +215,14 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     used.current.add(done.id);
     const handle = done.asset.handle;
     const name = done.file.name;
-    if (uploadFor === "sticker")
+    if (uploadFor === "clip") {
+      void fetch(`/api/proxy/assets/${encodeURIComponent(handle)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((info: { summary?: string } | null) => {
+          const m = /([0-9.]+)s/.exec(info?.summary ?? "");
+          setClips((cur) => [...cur, { id: nextId++, handle, name, start: 0, end: null, seconds: m ? Number(m[1]) : 0 }]);
+        });
+    } else if (uploadFor === "sticker")
       setOverlays((cur) => [
         ...cur,
         { id: nextId++, handle, name, anchor: "top_right", scale: 0.25, opacity: 1, start: 0, end: null },
@@ -219,8 +243,10 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     transition && kept.length > 1 && kept.every((p) => (p.end - p.start) / (p.speed ?? 1) >= 2 * TRANSITION_SECONDS + 0.1)
       ? TRANSITION_SECONDS
       : 0;
-  const length =
-    (kept.reduce((s, p) => s + (p.end - p.start) / (p.speed ?? 1), 0) - overlap * (kept.length - 1)) / speed;
+  const mainLength =
+    (kept.reduce((s, p) => s + (p.end - p.start) / (p.speed ?? 1) + (p.hold ?? 0), 0) - overlap * (kept.length - 1)) / speed;
+  const clipsLength = clips.reduce((s, c) => s + Math.max(0, (c.end ?? c.seconds) - c.start), 0);
+  const length = mainLength + clipsLength;
 
   // source time → edited time (cuts removed, each part's speed, then the whole speed), like the
   // server's Clock. The preview does not draw the crossfade, so it leaves the overlap out.
@@ -229,8 +255,11 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       let before = 0;
       for (const p of kept) {
         const sp = p.speed ?? 1;
-        if (t < p.end) return (before + Math.max(0, t - p.start) / sp) / speed;
-        before += (p.end - p.start) / sp;
+        if (t < p.end) {
+          const inside = p.reverse ? Math.max(0, p.end - Math.max(t, p.start)) : Math.max(0, t - p.start);
+          return (before + inside / sp) / speed;
+        }
+        before += (p.end - p.start) / sp + (p.hold ?? 0);
       }
       return null;
     },
@@ -387,13 +416,16 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       return ps;
     });
   }
+  /** The playhead, moved to the nearest beat when snapping is on. */
+  const snapped = snap && bpm > 0 ? Math.round(now / (60 / bpm)) * (60 / bpm) : now;
   function split() {
+    const at = snapped;
     setParts(() =>
       kept.flatMap((p) =>
-        now > p.start + 0.2 && now < p.end - 0.2
+        at > p.start + 0.2 && at < p.end - 0.2
           ? [
-              { start: p.start, end: now, speed: p.speed },
-              { start: now, end: p.end, speed: p.speed },
+              { start: p.start, end: at, speed: p.speed, reverse: p.reverse },
+              { start: at, end: p.end, speed: p.speed, reverse: p.reverse, hold: p.hold },
             ]
           : [p],
       ),
@@ -402,6 +434,24 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   /** One kept part at its own speed (on top of the whole-video speed). */
   function setPartSpeed(i: number, sp: number) {
     setParts(() => kept.map((p, j) => (j === i ? { ...p, speed: sp } : p)));
+  }
+  function patchPart(i: number, patch: Partial<Part>) {
+    setParts(() => kept.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  }
+  /** Cut part `i` into thirds that play at the speeds of a curve (hero time, ramp…). */
+  function applyCurve(i: number, key: string) {
+    const curve = CURVES.find((c) => c.key === key);
+    const p = kept[i];
+    if (!curve || !p || p.end - p.start < 1.5) return setError("Pick a part of at least 1.5 seconds for a speed curve.");
+    const third = (p.end - p.start) / curve.speeds.length;
+    const pieces = curve.speeds.map((sp, k) => ({
+      start: p.start + third * k,
+      end: k === curve.speeds.length - 1 ? p.end : p.start + third * (k + 1),
+      speed: sp,
+      reverse: p.reverse,
+      hold: k === curve.speeds.length - 1 ? p.hold : 0,
+    }));
+    setParts(() => [...kept.slice(0, i), ...pieces, ...kept.slice(i + 1)]);
   }
   function removePart(i: number) {
     if (kept.length === 1) return setError("Keep at least one part of the video.");
@@ -465,7 +515,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     denoise ||
     loudnorm ||
     stabilize ||
-    kept.some((p) => (p.speed ?? 1) !== 1) ||
+    kept.some((p) => (p.speed ?? 1) !== 1 || p.reverse || (p.hold ?? 0) > 0) ||
+    clips.length > 0 ||
     muted.video ||
     parts.length > 0 ||
     shape !== "original" ||
@@ -486,7 +537,13 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setError("");
     const body = {
       source,
-      parts: kept.map((p) => ({ start: +p.start.toFixed(3), end: +p.end.toFixed(3), speed: p.speed ?? 1 })),
+      parts: kept.map((p) => ({
+        start: +p.start.toFixed(3),
+        end: +p.end.toFixed(3),
+        speed: p.speed ?? 1,
+        reverse: p.reverse ?? false,
+        hold: p.hold ?? 0,
+      })),
       speed,
       shape,
       focus_x: focus[0],
@@ -535,6 +592,12 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
         opacity: o.opacity,
         start: o.start,
         ...(o.end !== null ? { end: o.end } : {}),
+        ...(o.end !== null && o.moveTo ? { move_to: o.moveTo } : {}),
+      })),
+      append: clips.map((c) => ({
+        handle: c.handle,
+        start: c.start,
+        ...(c.end !== null ? { end: c.end } : {}),
       })),
       denoise,
       loudnorm,
@@ -578,7 +641,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   // -- undo / redo: a snapshot of everything you can set, taken a moment after each change ----
   const doc = {
     parts, shape, focus, volume, speed, texts, voice, music, sounds, muted, adjust, filter,
-    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize,
+    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips,
   };
   const sig = JSON.stringify(doc);
   const history = useRef<{ source: string; stack: string[]; at: number }>({ source: "", stack: [], at: -1 });
@@ -623,6 +686,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setDenoise(d.denoise);
     setLoudnorm(d.loudnorm);
     setStabilize(d.stabilize);
+    setClips(d.clips ?? []);
   }
   function undo() {
     const h = history.current;
@@ -683,7 +747,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     fileInput.current = el;
   }, []);
 
-  function pickFile(for_: "voice" | "music" | "sticker") {
+  function pickFile(for_: "voice" | "music" | "sticker" | "clip") {
     setUploadFor(for_);
     fileInput.current?.click();
   }
@@ -778,6 +842,14 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     makingOnSave,
     save,
     splitLayers,
+    patchPart,
+    applyCurve,
+    clips,
+    setClips,
+    bpm,
+    setBpm,
+    snap,
+    setSnap,
     hasSoundLayer: sound !== null,
   };
 }
