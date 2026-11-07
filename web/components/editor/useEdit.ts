@@ -1,5 +1,6 @@
 "use client";
 
+import { drawShape } from "./shapes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Job, VoiceAccent } from "@/lib/types";
 import { isTerminal } from "@/lib/types";
@@ -959,21 +960,12 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     fileInput.current = el;
   }, []);
 
-  /** An emoji as a picture (drawn on a canvas, then added like any uploaded sticker). */
-  function addEmoji(emoji: string) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 256;
-    const ctx = c.getContext("2d");
-    if (!ctx) return;
-    ctx.font = "200px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(emoji, 128, 140);
-    c.toBlob((b) => {
-      if (!b) return;
-      setUploadFor("sticker");
-      upload([new File([b], `emoji-${emoji.codePointAt(0)?.toString(16) ?? "x"}.png`, { type: "image/png" })]);
-    }, "image/png");
+  /** A drawn shape as a picture, added like any uploaded sticker. */
+  async function addShape(key: string, color: string) {
+    const b = await drawShape(key, color);
+    if (!b) return;
+    setUploadFor("sticker");
+    upload([new File([b], `shape-${key}.png`, { type: "image/png" })]);
   }
   /** Replace a sticker by the same picture with its background cut out. */
   async function cutOut(id: number) {
@@ -1106,7 +1098,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     moveClip,
     green,
     setGreen,
-    addEmoji,
+    addShape,
     cutOut,
     cutting,
     draft,

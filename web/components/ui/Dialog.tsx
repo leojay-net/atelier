@@ -37,23 +37,23 @@ export const Dialog = forwardRef<DialogHandle, DialogProps>(function Dialog(
   return (
     <dialog
       ref={dialogRef}
-      className="w-full max-w-md rounded-lg border border-border bg-bg p-0 shadow-[var(--shadow-dialog)] backdrop:bg-black/35"
+      className="w-full max-w-md rounded-xl border border-border bg-bg p-0 shadow-[var(--shadow-dialog)]"
       onClick={(e) => {
         if (e.target === dialogRef.current) dialogRef.current?.close();
       }}
     >
-      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-fg">{title}</h2>
+      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <h2 className="text-[15px] font-semibold tracking-tight text-fg">{title}</h2>
         <button
           type="button"
           aria-label="Close"
           onClick={() => dialogRef.current?.close()}
-          className="rounded-sm p-1 text-fg-tertiary hover:bg-bg-subtle hover:text-fg"
+          className="grid h-7 w-7 place-items-center rounded-full text-fg-tertiary hover:bg-bg-inset hover:text-fg"
         >
           <X size={16} />
         </button>
       </div>
-      <div className="px-5 py-4">{children}</div>
+      <div className="px-6 py-5">{children}</div>
     </dialog>
   );
 });

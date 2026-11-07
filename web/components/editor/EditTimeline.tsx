@@ -50,7 +50,7 @@ function Tool({
 }
 
 const HANDLE = "absolute inset-y-0 z-[5] w-2 cursor-ew-resize bg-white/0 transition-colors hover:bg-white/50";
-const ROW = "relative h-7 rounded bg-[var(--ws-track)]";
+const ROW = "relative h-7 rounded-md bg-[var(--ws-track)]";
 const ZOOMS = [1, 2, 4, 8];
 
 /** The toolbar (play, time, split, delete, start, end, undo and redo, zoom) and one row of
@@ -368,7 +368,7 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
             <div className={clsx(ROW, dim("music"))}>
               {music.on && (music.handle || music.compose) ? (
                 <div className="absolute inset-y-1 left-0 right-0 overflow-hidden whitespace-nowrap rounded bg-[var(--ws-music)] px-1.5 text-[11px] leading-5 text-white/90">
-                  ♪ {music.mode === "compose" ? music.compose || "Music" : music.name || "My song"}
+                  {music.mode === "compose" ? music.compose || "Music" : music.name || "My song"}
                 </div>
               ) : null}
             </div>
