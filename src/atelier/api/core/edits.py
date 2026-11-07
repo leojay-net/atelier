@@ -23,6 +23,7 @@ ANCHORS = (
 TRANSITIONS = ("fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright",
                "circlecrop", "fadeblack", "fadewhite")  # fmt: skip
 TRANSITION_SECONDS = 0.5
+DRAFT_PROMPT = "(draft preview)"
 
 
 class Part(BaseModel):
@@ -138,6 +139,7 @@ class EditIn(BaseModel):
     denoise: bool = False  # reduce noise in the video's own sound
     loudnorm: bool = False  # even out the final loudness (-14 LUFS)
     stabilize: bool = False
+    draft: bool = False  # a quick preview of everything: not a version, no voice or music is made
 
     @model_validator(mode="after")
     def _ordered(self) -> EditIn:
@@ -460,7 +462,10 @@ def build_spec(
         through_audio(("audio.extract", {}), ("audio.loudnorm", {"target_lufs": -14.0}))
     if edit.fade_in or edit.fade_out:
         add("video.fade", {"fade_in": edit.fade_in, "fade_out": edit.fade_out})
-    add("export", {"preset": "web_h264"})
+    if edit.draft:
+        add("export", {"preset": "web_h264", "overrides": {"encoder_preset": "veryfast", "crf": 30}})
+    else:
+        add("export", {"preset": "web_h264"})
     steps[-1]["id"] = "out"
     return {"version": 1, "inputs": inputs, "steps": steps, "outputs": ["out"]}
 
