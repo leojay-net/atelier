@@ -76,7 +76,7 @@ export function EditPlayer({ edit }: { edit: Edit }) {
           </button>
         ) : edit.draft.phase === "error" ? (
           <>
-            <span className="truncate" title={edit.draft.note}>Preview failed</span>
+            <span className="line-clamp-2" title={edit.draft.note}>Preview failed: {edit.draft.note}</span>
             <button type="button" className="underline" onClick={() => void edit.renderDraft()}>
               retry
             </button>
@@ -99,7 +99,7 @@ export function EditPlayer({ edit }: { edit: Edit }) {
     {edit.showDraft ? (
       <div className="absolute inset-0 z-20 flex flex-col bg-black">
         <div className="flex items-center justify-between px-3 py-1.5 text-[12px] text-white/80">
-          <span>Full preview: the real render with every effect (a little lower quality)</span>
+          <span>Full preview: the real render with every effect (a little lower quality). {edit.draft.note}</span>
           <button type="button" aria-label="Close the full preview" className="rounded p-1 hover:bg-white/15" onClick={() => edit.setShowDraft(false)}>
             <X size={15} />
           </button>
