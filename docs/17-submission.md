@@ -60,7 +60,7 @@ documents but cannot afford an editor or a monthly seat for every tool. Atelier 
 | Code execution isolated, never in the main process | The product never executes model-written code: the model emits a spec, the validator rejects anything outside the op catalogue, and the engine runs only its own fixed ops in worker processes, not in the API process. Where shell commands are run at all (the eval baseline), they run in a throwaway container: no network, read-only root, all capabilities dropped, memory, CPU and process limits (`src/atelier/evals/sandbox.py`, ADR-0012). |
 | Public GitHub repo with setup docs | Repo above; `README.md` quick start, `docs/12-deployment-and-ops.md`. |
 | Live public demo URL | https://209.250.229.110.sslip.io |
-| Demo video with a containment moment | `scripts/demo_containment.py` attacks the sandbox with `rm -rf /`, an infinite loop and a network access attempt, and prints what the sandbox absorbed. See the shot list below. |
+| Demo video with a containment moment | `scripts/demo_containment.py` attacks the sandbox with `rm -rf /`, an infinite loop, a fork bomb and a network access attempt, and prints what the sandbox absorbed. See the shot list below. |
 | Written architecture and business use case | Sections 2 and 3 of this page, plus `docs/02-architecture.md`, `docs/10-security.md`. |
 
 ## 5. Honest limits
