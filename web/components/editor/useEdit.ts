@@ -844,8 +844,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       if (token !== draftToken.current) return; // a newer change started another one
       const out = job.result?.outputs ? Object.values(job.result.outputs)[0] : undefined;
       if (job.status === "succeeded" && out)
-        setDraft({ phase: "ready", handle: out.handle, note: withoutCaptions ? "No speech was found, so the preview has no captions." : "", sig: mine });
-      else if (!withoutCaptions && captions.on && /no speech/i.test(job.error)) return renderDraft(true);
+        setDraft({ phase: "ready", handle: out.handle, note: withoutCaptions ? "No speech could be read from this video, so the preview has no captions." : "", sig: mine });
+      else if (!withoutCaptions && captions.on && /no speech|transcribe|no audio/i.test(job.error)) return renderDraft(true);
       else setDraft({ phase: "error", handle: "", note: job.error || "The preview could not be made.", sig: mine });
     } catch (e) {
       if (token === draftToken.current)
