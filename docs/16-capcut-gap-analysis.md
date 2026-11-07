@@ -1,6 +1,6 @@
 # 16. CapCut (free and Pro) against Atelier: what is missing, for the editor and for the AI
 
-**Written 2026-11-07.** Research only, nothing here is built yet. Atelier's *engine* already has
+**Written 2026-11-07; status updated the same day (section 5).** Atelier's *engine* already has
 many of the operations CapCut sells; most of the gap is that the **manual editor does not expose
 them**, and the AI is not always told to use them.
 
@@ -117,3 +117,16 @@ voice changer, a large sound and sticker library, templates. Decide these only a
 |---|---|
 | Nov 7 to 8 | Submission work first (README, submission page, demo video). Tier A items 1, 2 and 4 only if time is left; each is about 1 to 2 hours. |
 | After Nov 8 | Rest of Tier A (about 1 day), then Tier B multi-clip timeline (about 3 days), then the AI stems. |
+
+## 5. Status (2026-11-07, deployed)
+
+| Item | State |
+|---|---|
+| Tier A (filters, auto captions, fades, transitions, denoise, loudness, stabilise, stickers, text colour and animation, undo/redo, zoom, per-clip speed) | Built, in the editor and the AI prompt |
+| Split into picture and sound layers | Built (`POST /jobs/{id}/split`); the editor opens the sound as its own layer. The AI does not yet produce split layers by itself |
+| Reverse, hold a frame, speed curves (hero, bullet, montage, ramps) | Built, per part |
+| Sticker glide (two-point keyframe) | Built (`video.overlay` `move_to`) |
+| More clips after the edit | Built as a join at the end; the preview plays only the first video. Not yet a free multi-clip timeline (no reordering or mixing clips) |
+| Beat grid and snap Split to beat | Built with a typed BPM; no automatic beat detection yet |
+| Green-screen removal | Engine op `video.chromakey` (colour key over a picture); no editor panel yet; no AI background removal |
+| Several overlay tracks, free keyframes (scale, opacity, rotation), masks, blend modes, voice changer, sticker/sound library | Not built |
