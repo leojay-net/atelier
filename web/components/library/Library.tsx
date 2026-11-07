@@ -144,7 +144,7 @@ export function LibraryView() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-fg">Library</h1>
+        <h1 className="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.03em] text-fg">Library</h1>
         <p className="mt-1 text-[13px] text-fg-secondary">{SECTIONS.find((s) => s.key === section)?.hint}</p>
       </div>
 

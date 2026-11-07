@@ -72,12 +72,13 @@ export function Splitter({
       title="Drag to resize. Double-click to hide or show."
       onPointerDown={down}
       onDoubleClick={onToggle}
-      className="group relative z-10 hidden w-1 shrink-0 cursor-col-resize bg-[var(--ws-canvas)] md:block"
+      className="group relative z-10 hidden w-px shrink-0 cursor-col-resize bg-border md:block"
     >
+      <span className="absolute inset-y-0 -left-1.5 -right-1.5" />
       <span
         className={clsx(
-          "absolute inset-y-0 -left-0.5 -right-0.5 transition-colors",
-          active ? "bg-accent" : "group-hover:bg-accent/70",
+          "absolute inset-y-0 -left-px w-[3px] rounded-full transition-all duration-200",
+          active ? "bg-accent opacity-100" : "bg-accent opacity-0 group-hover:opacity-70",
         )}
       />
       {width === 0 ? (

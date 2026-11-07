@@ -360,7 +360,7 @@ export function CharactersView() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-fg">Characters</h1>
+        <h1 className="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.03em] text-fg">Characters</h1>
         <p className="mt-1 max-w-2xl text-[13px] text-fg-secondary">
           The cast of your animated stories: characters and the places they live in. Each one gets a design that keeps
           them looking the same in every scene and every episode. Then go to Create and ask, for example:{" "}
