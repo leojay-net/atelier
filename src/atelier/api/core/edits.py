@@ -377,3 +377,19 @@ def build_spec(
     add("export", {"preset": "web_h264"})
     steps[-1]["id"] = "out"
     return {"version": 1, "inputs": inputs, "steps": steps, "outputs": ["out"]}
+
+
+def split_spec(source: str) -> dict[str, Any]:
+    """Two results from one video: the picture alone (no sound) and its sound alone, so each can
+    be muted, replaced or taken out by itself in the editor."""
+    return {
+        "version": 1,
+        "inputs": {"v": source},
+        "steps": [
+            {"id": "m", "op": "video.mute", "in": ["v"], "args": {}},
+            {"id": "picture", "op": "export", "in": ["m"], "args": {"preset": "web_h264"}},
+            {"id": "a", "op": "audio.extract", "in": ["v"], "args": {}},
+            {"id": "sound", "op": "export", "in": ["a"], "args": {"preset": "podcast_mp3"}},
+        ],
+        "outputs": ["picture", "sound"],
+    }

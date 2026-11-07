@@ -565,7 +565,14 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
   const latest = [...thread].reverse().find((j) => outputsOf(j).length > 0);
   const shown = allOutputs.find((o) => o.handle === picked) ?? (latest ? outputsOf(latest)[0] : undefined);
   const isVideo = shown?.media === "video";
-  const edit = useEdit(last?.id ?? "", isVideo && shown ? shown.handle : "");
+  // a version split into layers has its sound next to the picture: open it as its own layer
+  const sourceJob = thread.find((j) => outputsOf(j).some((o) => o.handle === shown?.handle));
+  const soundOut = isVideo ? outputsOf(sourceJob).find((o) => o.media === "audio") : undefined;
+  const edit = useEdit(
+    last?.id ?? "",
+    isVideo && shown ? shown.handle : "",
+    soundOut ? { handle: soundOut.handle, name: "Soundtrack" } : null,
+  );
   const current = activityLines(events, !working)
     .filter((l) => l.state === "doing")
     .at(-1);
@@ -767,7 +774,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
               ) : (
                 <fieldset disabled={working} className="m-0 min-w-0 border-0 p-0">
                   {working ? <p className="mb-3 text-fg-tertiary">You can edit when I&apos;m done.</p> : null}
-                  {tool === "audio" ? <AudioPanel edit={edit} /> : null}
+                  {tool === "audio" ? <AudioPanel edit={edit} onSplit={adopt} /> : null}
                   {tool === "text" ? <TextPanel edit={edit} /> : null}
                   {tool === "stickers" ? <StickersPanel edit={edit} /> : null}
                   {tool === "effects" ? <EffectsPanel edit={edit} /> : null}
