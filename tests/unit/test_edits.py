@@ -348,6 +348,8 @@ def test_a_video_splits_into_its_picture_and_its_sound() -> None:
     )
     first = api.post("/jobs", {"prompt": "tidy my clip", "assets": [clip]}).json()
     (video,) = [o["handle"] for o in first["result"]["outputs"].values()]
+    layers = first["result"]["layers"]  # the AI's video comes with its picture and sound apart
+    assert layers["picture"].startswith("asset:") and layers["sound"].startswith("asset:")
     res = api.post(f"/jobs/{first['id']}/split", {"source": video})
     assert res.status_code == 202, res.content
     done = res.json()
@@ -463,3 +465,46 @@ def test_a_draft_preview_is_not_a_version_and_is_cleaned_up() -> None:
     assert all(api.get(f"/jobs/{i}").status_code == 404 for i in gone)  # only the newest two stay
     created = api.get("/library?section=created").json()["items"]
     assert all(i.get("job") in (None, first["id"]) or i["job"] == first["id"] for i in created)
+
+
+def test_shapes_fades_blends_pip_voice_effects_and_new_sounds_render(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    photo = engine.store.put_file(FIXTURES / "photo.jpg").handle
+    tone = engine.store.put_file(TONE).handle
+    edit = EditIn(
+        source=clip,
+        overlays=[
+            {"handle": photo, "anchor": "center", "scale": 0.3, "shape": "circle", "start": 0.2, "end": 3, "fade": 0.5},
+            {"handle": photo, "scale": 1, "blend": "screen", "opacity": 0.4, "start": 0, "end": 2},
+            {"handle": clip, "anchor": "bottom_left", "scale": 0.3, "start": 1, "end": 3, "sound": True},
+        ],
+        voiceover={"handle": tone, "start": 0.5, "effect": "deep"},
+        sounds=[{"at": 1, "kind": k} for k in ("ding", "click", "laser", "boom", "sparkle")],
+    )
+    spec = build_spec(
+        edit, 4.0, voice_handle=tone, overlay_handles=[photo, photo, clip],
+        overlay_media=["image", "image", "video"],
+    )  # fmt: skip
+    ops = [s["op"] for s in spec["steps"]]
+    assert "video.pip" in ops and "audio.voice_effect" in ops and ops.count("video.overlay") == 2
+    out = engine.store.path(engine.run(spec).outputs["out"].hash)
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+    assert "a deep voice" in describe(edit, kept_parts(edit, 4.0), 4.0)
+    for effect in ("high", "robot", "telephone", "echo", "whisper"):
+        e2 = EditIn(source=clip, voiceover={"handle": tone, "effect": effect})
+        s2 = build_spec(e2, 4.0, voice_handle=tone)
+        engine.run(s2)
+
+
+def test_a_picture_can_be_cut_out_for_a_sticker() -> None:
+    _, api = make_org("acme")
+    photo = api.upload("photo.jpg", (FIXTURES / "photo.jpg").read_bytes()).json()["handle"]
+    res = api.post(f"/assets/{photo}/cutout", {})
+    assert res.status_code == 202, res.content
+    job = res.json()
+    assert job["parent"] is None
+    if job["status"] == "succeeded":
+        (out,) = job["result"]["outputs"].values()
+        assert out["ext"] == ".png"
+    assert api.post(f"/assets/{api.upload('a.wav', TONE.read_bytes()).json()['handle']}/cutout", {}).status_code == 422

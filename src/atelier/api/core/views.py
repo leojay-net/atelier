@@ -879,10 +879,12 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         music_handle = info.handle
         made.append((info.handle, "music.mp3"))
 
-    overlay_handles = [_resolve(engine, o.handle).handle for o in body.overlays]
+    overlay_infos = [_resolve(engine, o.handle) for o in body.overlays]
+    overlay_handles = [i.handle for i in overlay_infos]
+    overlay_media = [i.media.value for i in overlay_infos]
     has_audio = bool(engine.probe(source).get("audio"))
     spec = edits.build_spec(
-        body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles
+        body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles, overlay_media
     )
     _validated(engine, spec)
     if body.draft:
@@ -899,6 +901,40 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     )
     for handle, name in made:
         services.register_asset(org, engine.store.resolve(handle), filename=name, origin=job)
+    enqueue(job)
+    job.refresh_from_db()
+    return Status(202, services.job_dict(job))
+
+
+@api.post("/assets/{handle}/cutout", response={202: dict[str, Any]})
+def cutout(request: HttpRequest, handle: str) -> Status[dict[str, Any]]:
+    """Cut the subject of a picture out of its background (a transparent PNG), e.g. for a
+    sticker. A background job of its own: it is not a version of any chat."""
+    org = _org(request)
+    engine = services.engine_for(org)
+    source = _resolve(engine, handle)
+    if source.media is not MediaType.IMAGE:
+        raise ApiError(422, "bad_request", "only pictures can be cut out")
+    services.check_rate(request.api_key)  # type: ignore[attr-defined]
+    services.check_quota(org)
+    spec = {
+        "version": 1,
+        "inputs": {"i": source.handle},
+        "steps": [
+            {"id": "c", "op": "image.remove_background", "in": ["i"], "args": {}},
+            {"id": "out", "op": "export", "in": ["c"], "args": {"preset": "transparent_png"}},
+        ],
+        "outputs": ["out"],
+    }
+    _validated(engine, spec)
+    job = Job.objects.create(
+        org=org,
+        created_by=request.api_key,  # type: ignore[attr-defined]
+        kind="spec",
+        spec=spec,
+        prompt="Cut out the background",
+        assets=[source.handle],
+    )
     enqueue(job)
     job.refresh_from_db()
     return Status(202, services.job_dict(job))

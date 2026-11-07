@@ -568,10 +568,20 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
   // a version split into layers has its sound next to the picture: open it as its own layer
   const sourceJob = thread.find((j) => outputsOf(j).some((o) => o.handle === shown?.handle));
   const soundOut = isVideo ? outputsOf(sourceJob).find((o) => o.media === "audio") : undefined;
+  // the AI's own video comes with its picture and its sound made separately: edit those
+  const aiLayers = (sourceJob?.result as { layers?: { picture?: string; sound?: string } } | null | undefined)?.layers;
+  const layered =
+    isVideo && !soundOut && aiLayers?.picture && aiLayers.sound && outputsOf(sourceJob)[0]?.handle === shown?.handle
+      ? { picture: aiLayers.picture, sound: aiLayers.sound }
+      : null;
   const edit = useEdit(
     last?.id ?? "",
-    isVideo && shown ? shown.handle : "",
-    soundOut ? { handle: soundOut.handle, name: "Soundtrack" } : null,
+    layered ? layered.picture : isVideo && shown ? shown.handle : "",
+    soundOut
+      ? { handle: soundOut.handle, name: "Soundtrack" }
+      : layered
+        ? { handle: layered.sound, name: "Soundtrack" }
+        : null,
   );
   const current = activityLines(events, !working)
     .filter((l) => l.state === "doing")

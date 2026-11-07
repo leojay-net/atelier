@@ -122,6 +122,30 @@ def _run_spec(job: Job, engine: Engine) -> Job:
     )
 
 
+def _split_layers(job: Job, engine: Engine, res: AgentResult) -> dict[str, str]:
+    """For a finished video with sound: its picture and its sound as separate files, so the
+    editor opens them as separate layers (mute, replace or remove one without the other).
+    Best effort: the result is the same without them."""
+    from atelier.api.core import edits
+
+    try:
+        outs = list(res.outputs.values())
+        if len(outs) != 1:
+            return {}
+        info = engine.store.resolve(outs[0])
+        if info.media.value != "video" or not engine.probe(info).get("audio"):
+            return {}
+        done = engine.run(edits.split_spec(info.handle))
+        picture, sound = done.outputs.get("picture"), done.outputs.get("sound")
+        if picture is None or sound is None:
+            return {}
+        for rep, name in ((picture, "picture.mp4"), (sound, "sound.mp3")):
+            services.register_asset(job.org, engine.store.info(rep.hash), filename=name, origin=job)
+        return {"picture": picture.handle, "sound": sound.handle}
+    except Exception:  # noqa: BLE001 - layers are a convenience, never a reason to fail the job
+        return {}
+
+
 def _agent_outcome(job: Job, engine: Engine, res: AgentResult) -> Job:
     body: dict[str, Any] = (
         services.summarize_result(res.engine_result) if res.engine_result is not None else {}
@@ -138,6 +162,9 @@ def _agent_outcome(job: Job, engine: Engine, res: AgentResult) -> Job:
     if res.engine_result is not None:
         _register_outputs(job, engine, res.engine_result)
     if res.status == "ok":
+        layers = _split_layers(job, engine, res)
+        if layers:
+            body["layers"] = layers
         return _finish(job, Job.SUCCEEDED, **fields)
     if res.status == "checks_failed":
         return _finish(job, Job.CHECKS_FAILED, **fields)
