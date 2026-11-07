@@ -137,7 +137,8 @@ voice changer, a large sound and sticker library, templates. Decide these only a
 | AI videos open with picture and sound already on separate layers | Built (`result.layers`, made after every finished video with sound); voice and music inside the sound are not separated |
 | Full preview (server draft of the whole edit) | Built, see section 6 |
 | Sticker keyframes (glide, grow or shrink, spin, fade), picture shape masks (circle, rounded, diamond), background removal for a still camera without any model | Built |
-| Free-form keyframe curves for every setting, hand-drawn masks, several video tracks with their own timelines | Not built (engineering time, no paid service needed) |
+| Hand-drawn masks (click corners, drag to adjust; `video.mask` polygon), multi-keyframe zoom (`video.zoom`), a look that changes over time (`video.color` `to_*`), reorderable clips with a choice of where the main video plays, several video overlays each with its own start and end | Built |
+| Easing curves on every setting, a separate timeline lane per overlay video, per-clip transitions between added clips | Not built |
 
 ## 6. Full preview
 
