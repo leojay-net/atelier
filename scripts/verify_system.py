@@ -77,17 +77,17 @@ def main() -> int:
 
     # 3. Intent & Entity Extraction -> Spec Execution
     test_section("3. Intent Extraction & Spec Generation (Image Domain)")
-    prompt_img = "Create a YouTube thumbnail from this photo with title 'Vultr Agent Rush Launch'"
+    prompt_img = "Create a YouTube thumbnail from this photo with title 'Launch Day'"
     print(f"    Simulated User Prompt: \"{prompt_img}\"")
     print("    Extracted Intent     : Generate thumbnail with title overlay")
-    print("    Extracted Entities   : { 'size': 'thumb_youtube', 'title': 'Vultr Agent Rush Launch' }")
+    print("    Extracted Entities   : { 'size': 'thumb_youtube', 'title': 'Launch Day' }")
 
     img_spec = {
         "recipe": "batch_thumbnails",
         "params": {
             "in": photo_asset.handle,
             "size": "thumb_youtube",
-            "title": "Vultr Agent Rush Launch",
+            "title": "Launch Day",
         },
     }
     print("    Generated Pipeline Spec:")

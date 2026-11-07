@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Containment Demonstration for Vultr Agent Rush Hackathon.
+"""Isolation check for the throwaway-container sandbox.
 
-Proves that untrusted/hostile agent actions and media execution are strictly contained:
+Shows that hostile commands are contained:
 1. Destructive Commands (`rm -rf /`, `rm -rf /etc`) -> Blocked by read-only root & dropped caps
 2. Resource Exhaustion / Fork Bomb -> Blocked by pids-limit (256)
 3. Infinite Loop -> Blocked by strict execution timeout
@@ -17,7 +17,7 @@ from atelier.evals.sandbox import DockerSandbox, SandboxError
 
 def print_banner(title: str) -> None:
     print("\n" + "=" * 60)
-    print(f" [VULTR AGENT RUSH] Containment Test: {title}")
+    print(f" Isolation check: {title}")
     print("=" * 60)
 
 
@@ -53,8 +53,8 @@ def run_test(name: str, command: str, expected_description: str) -> None:
 
 def main() -> None:
     print("============================================================")
-    print(" ATELIER AGENT SANDBOX: CONTAINMENT VERIFICATION SUITE")
-    print(" Vultr Agent Rush - Lablab.ai 2026")
+    print(" ATELIER SANDBOX: ISOLATION CHECK")
+    print("")
     print("============================================================")
 
     # 1. Destructive attack

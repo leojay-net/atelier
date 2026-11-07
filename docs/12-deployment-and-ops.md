@@ -1,6 +1,6 @@
 # 12. Deployment and Operations
 
-This document describes the production deployment, infrastructure architecture, environment configuration, and operational procedures for Atelier on Vultr Cloud Compute for the **Vultr: Agent Rush Hackathon** (November 3–8, 2026).
+This document describes the production deployment, infrastructure architecture, environment configuration, and operational procedures for Atelier on Vultr Cloud Compute .
 
 ---
 
@@ -99,13 +99,14 @@ As of November 2026, the engine exposes **69 operations** across all media domai
 
 ## 5. Security & Isolation Model
 
-- **Filesystem Sandbox:** Subprocesses execute against a temporary directory with read-only root and no execution rights on output paths.
-- **Network Isolation:** Media render processes run strictly air-gapped without socket permissions. Model calls happen exclusively at the orchestrator level.
-- **Resource Caps:** Process limits enforced via OS cgroups/RLIMIT (CPU timeout 300s, max memory 4 GB per step).
-- **Containment Demonstration:** Automated harness (`scripts/demo_containment.py`) verifies:
-  1. Filesystem escape block (`rm -rf /` fails with `PermissionDenied`)
-  2. Infinite loop kill (timeout triggered, host unimpacted)
-  3. Network exfiltration block (zero outbound sockets permitted in render sandbox)
+- **Model output is never run as code.** The model writes a JSON spec; the validator rejects anything outside the operation catalogue; the engine runs only its own fixed operations.
+- **Worker processes, not the API process.** Each step runs as a subprocess of a `worker` container with CPU, memory and file-size limits (RLIMIT). Workers have network access, because model calls need it. They are not read-only or air-gapped, and `docs/13-live-user-test-2026-11-04.md` explains why that matters.
+- **Throwaway-container sandbox for shell commands.** Where shell commands are run at all (the evaluation baseline), they run in a container with no network, a read-only root, all capabilities dropped and memory, CPU and process limits (`src/atelier/evals/sandbox.py`).
+- **Isolation check:** `scripts/verify_isolation.py` attacks that sandbox and prints what it absorbed:
+  1. `rm -rf /` fails with "Read-only file system" errors
+  2. An infinite loop is killed by the timeout
+  3. A fork bomb stops at the process limit
+  4. A network connection fails with "Network is unreachable"
 
 ---
 

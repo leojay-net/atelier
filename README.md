@@ -14,7 +14,7 @@ This split is what lets Atelier use far fewer tokens than a general-purpose codi
 
 ## Status
 
-Built and deployed for the Vultr Agent Rush hackathon. Live demo: **https://209.250.229.110.sslip.io**. Judges: start with [`docs/17-submission.md`](docs/17-submission.md) (architecture, business case, rule-by-rule evidence, demo shot list).
+Live demo: **https://209.250.229.110.sslip.io** (sign up with any email). Architecture, business case and how it is isolated: [`docs/17-architecture-and-business-case.md`](docs/17-architecture-and-business-case.md).
 
 - **Prompt to finished piece:** video (with voice, music, captions, sound effects), animated characters, images, audio, Word/Excel/PowerPoint/PDF, through an AI director whose output is a small validated spec.
 - **A CapCut-style workspace** (`web/`): history, media, timeline with layers, filters, stickers, auto captions, fades and transitions, audio clean-up, undo/redo, and an AI assistant, all saving through the same spec pipeline.

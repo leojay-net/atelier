@@ -45,7 +45,7 @@ One useful counterpoint: over-polish can read as fake, so restraint matters.
 | Natural voice (current) | Qwen3-TTS, 9 voices | In use |
 | Pictures | qwen-image-2.1 (3 s), plus photo search | In use |
 | Word timings for captions | Whisper returns text only (no `verbose_json`) | We don't need it: generating speech one sentence at a time gives exact sentence timings, and words are spread within each sentence |
-| AI *video* clips (image-to-video) | **None listed on Vultr** | Out of scope: using an outside provider would break the hackathon's "all inference on Vultr" rule |
+| AI *video* clips (image-to-video) | **None listed on Vultr** | Out of scope: using an outside provider would break the "all inference on Vultr" design rule |
 
 ## The plan, in order of impact
 
@@ -82,7 +82,7 @@ One useful counterpoint: over-polish can read as fake, so restraint matters.
    first 2 s), plus a contact-sheet look at its own cut, fixing what fails before the user
    sees it.
 
-**After the hackathon:** AI video clips (image-to-video, if Vultr adds a model);
+**Next:** AI video clips (image-to-video, if Vultr adds a model);
 motion-graphics templates (e.g. Remotion); brand kits applied automatically; voice cloning
 (with consent).
 

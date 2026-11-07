@@ -115,8 +115,8 @@ voice changer, a large sound and sticker library, templates. Decide these only a
 
 | When | What |
 |---|---|
-| Nov 7 to 8 | Submission work first (README, submission page, demo video). Tier A items 1, 2 and 4 only if time is left; each is about 1 to 2 hours. |
-| After Nov 8 | Rest of Tier A (about 1 day), then Tier B multi-clip timeline (about 3 days), then the AI stems. |
+| First | Documentation and the demo video. Tier A items 1, 2 and 4 only if time is left; each is about 1 to 2 hours. |
+| Then | Rest of Tier A (about 1 day), then Tier B multi-clip timeline (about 3 days), then the AI stems. |
 
 ## 5. Status (2026-11-07, deployed)
 

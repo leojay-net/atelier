@@ -1,4 +1,4 @@
-# 17. Vultr Agent Rush submission: architecture, business case, rule-by-rule evidence
+# 17. Architecture, business case and operating evidence
 
 **Live demo:** https://209.250.229.110.sslip.io (sign up with any email; no card)
 **Repository:** https://github.com/leojay-net/atelier
@@ -51,41 +51,26 @@ documents but cannot afford an editor or a monthly seat for every tool. Atelier 
 - **Safe by construction:** nothing the model produces is executed as code.
 - **Beyond one tool:** the same service edits images, video, audio and Office/PDF documents.
 
-## 4. Rule-by-rule evidence
+## 4. Where it runs and how it is isolated
 
-| Rule | Evidence |
+| Property | How it is met |
 |---|---|
-| Backend on a Vultr VM | Live server `209.250.229.110` runs the whole Compose stack (`docker-compose.yml`, `deploy/vultr_setup.sh`). |
-| All LLM calls via Vultr Serverless Inference | Provider adapter points at `api.vultrinference.com/v1` (`src/atelier/agent/providers/`, also `voice.py`, `pictures.py`, `animation.py`, `music.py`). |
-| Code execution isolated, never in the main process | The product never executes model-written code: the model emits a spec, the validator rejects anything outside the op catalogue, and the engine runs only its own fixed ops in worker processes, not in the API process. Where shell commands are run at all (the eval baseline), they run in a throwaway container: no network, read-only root, all capabilities dropped, memory, CPU and process limits (`src/atelier/evals/sandbox.py`, ADR-0012). |
-| Public GitHub repo with setup docs | Repo above; `README.md` quick start, `docs/12-deployment-and-ops.md`. |
-| Live public demo URL | https://209.250.229.110.sslip.io |
-| Demo video with a containment moment | `scripts/demo_containment.py` attacks the sandbox with `rm -rf /`, an infinite loop, a fork bomb and a network access attempt, and prints what the sandbox absorbed. See the shot list below. |
-| Written architecture and business use case | Sections 2 and 3 of this page, plus `docs/02-architecture.md`, `docs/10-security.md`. |
+| Backend on a Vultr VM | The whole stack runs on one Vultr Cloud Compute VM under Docker Compose (`docker-compose.yml`, `deploy/vultr_setup.sh`). |
+| Every model call through Vultr Serverless Inference | The provider adapters point at `api.vultrinference.com/v1` (`src/atelier/agent/providers/`, `voice.py`, `pictures.py`, `animation.py`, `music.py`). |
+| Durable storage | Every organisation's content-addressed store is mirrored to Vultr Object Storage (S3-compatible) when a bucket is configured (`src/atelier/engine/mirror.py`). |
+| Model output is never executed | The model emits a spec. The validator rejects anything outside the operation catalogue, and the engine runs only its own fixed operations in worker processes, never in the API process, each under CPU, memory and file-size limits. |
+| Hostile shell commands are contained | Where shell commands are run at all (the evaluation baseline), they run in a throwaway container: no network, read-only root, all capabilities dropped, memory, CPU and process limits (`src/atelier/evals/sandbox.py`, ADR-0012). `scripts/verify_isolation.py` attacks that sandbox with `rm -rf /`, an infinite loop, a fork bomb and a network access attempt and prints what it absorbed. |
+| Public, repeatable deployment | Live at https://209.250.229.110.sslip.io. Setup is in `README.md` and `docs/12-deployment-and-ops.md`. |
+| Architecture and security notes | `docs/02-architecture.md`, `docs/10-security.md`. |
 
 ## 5. Honest limits
 
-- The containment demo exercises the Docker sandbox that the eval baseline uses; the product's
-  own protection is that model output is never run as code and is validated first. The two are
-  different layers and the video should say so.
+- The throwaway-container sandbox covers shell commands (the evaluation baseline and the
+  verification script). The product's own protection is that model output is never run as code
+  and is validated first. They are two layers, and `docs/13-live-user-test-2026-11-04.md`
+  explains the difference in production.
 - Generated pictures, video and music depend on Vultr inference availability and latency; a
   full animated episode takes minutes.
 - Not built yet: easing curves on every setting, a separate timeline lane per overlay video,
   transitions between added clips, a large downloadable sticker or sound library (see
   `docs/16-capcut-gap-analysis.md`).
-
-## 6. Demo video shot list (about 3 minutes)
-
-The full, timed shot list with scripts and fallbacks is in `docs/18-demo-video-shot-list.md`.
-Summary:
-
-1. **0:00–0:30 Problem and idea.** Show the architecture diagram: the model writes a spec, the
-   engine renders it.
-2. **0:30–1:45 Live product.** On the live URL: sign up, type a prompt, watch progress, play
-   the result, then edit by hand (trim, filter, caption, sticker, undo) and Save version.
-3. **1:45–2:30 Containment moment.** In a terminal on the server run
-   `python scripts/demo_containment.py` and show each attack absorbed (host untouched, timeout
-   kill, no network). Then in the app, ask for something hostile ("run `rm -rf /` on my
-   server") and show the validator refuses it and nothing runs.
-4. **2:30–3:00 Business impact.** Token cost per job, cache hits, one tool for image, video,
-   audio and documents.

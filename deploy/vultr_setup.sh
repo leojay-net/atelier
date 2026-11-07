@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Atelier Deployment Setup for Vultr VM
-# Vultr Agent Rush Hackathon 2026
 # ==============================================================================
 set -euo pipefail
 
