@@ -56,7 +56,8 @@ const ZOOMS = [1, 2, 4, 8];
 /** The toolbar (play, time, split, delete, start, end, undo and redo, zoom) and one row of
  * tracks per layer, each of which can be muted, hidden or removed on its own. */
 export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) {
-  const { duration, now, kept, parts, texts, voice, music, sounds, overlays, captions } = edit;
+  const { duration, now, kept, parts, texts, voice, music, sounds, overlays, captions, clips, bpm } = edit;
+  const beats = bpm > 0 && duration ? Array.from({ length: Math.min(400, Math.floor(duration / (60 / bpm))) + 1 }, (_, i) => i * (60 / bpm)) : [];
   const pct = (t: number) => (duration ? `${(t / duration) * 100}%` : "0%");
   const dragging = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -221,6 +222,7 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
                 ) : null}
               </div>
             ))}
+            {clips.length ? <div className="flex h-7 items-center text-[11px] text-fg-tertiary">Clips</div> : null}
           </div>
 
           <div
@@ -250,6 +252,8 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
                 >
                   {i === 0 ? "Video" : ""}
                   {(p.speed ?? 1) !== 1 ? <span className="ml-1 rounded bg-black/30 px-1">{p.speed}x</span> : null}
+                  {p.reverse ? <span className="ml-1 rounded bg-black/30 px-1">◀ back</span> : null}
+                  {(p.hold ?? 0) > 0 ? <span className="ml-1 rounded bg-black/30 px-1">hold {p.hold}s</span> : null}
                   <span
                     title="Drag to trim"
                     className={`${HANDLE} left-0`}
@@ -365,6 +369,26 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
                 </div>
               ) : null}
             </div>
+            {clips.length ? (
+              <div className={clsx(ROW, "flex gap-1 bg-transparent")} title="Joined after the video when you save">
+                {clips.map((c) => (
+                  <div key={c.id} className="min-w-0 flex-1 truncate rounded bg-[var(--ws-video)]/70 px-1.5 text-[11px] leading-7 text-white/90">
+                    + {c.name}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {beats.length ? (
+              <div className="pointer-events-none absolute inset-y-0 left-0 right-0 z-[1]">
+                {beats.map((t, i) => (
+                  <span
+                    key={i}
+                    className={clsx("absolute inset-y-0 w-px", i % 4 === 0 ? "bg-white/25" : "bg-white/10")}
+                    style={{ left: pct(t) }}
+                  />
+                ))}
+              </div>
+            ) : null}
             {/* playhead */}
             <div
               className="pointer-events-none absolute inset-y-0 z-10 w-px bg-[var(--ws-playhead)]"

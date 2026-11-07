@@ -2,10 +2,11 @@
 
 /* eslint-disable react-hooks/refs -- `edit` is one object from useEdit; its functions read refs only in event handlers, which the rule can't see through */
 
-import { AudioLines, Captions, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
+import { AudioLines, Captions, Film, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
 import type { Job } from "@/lib/types";
 import { Btn, Slider, field } from "./EditUi";
 import {
+  CURVES,
   FILTERS,
   NEUTRAL,
   SOUNDS,
@@ -33,7 +34,7 @@ export function EditFileInput({ edit }: { edit: Edit }) {
     <input
       ref={edit.fileRef}
       type="file"
-      accept="audio/*,video/*"
+      accept="audio/*,video/*,image/*"
       className="hidden"
       onChange={(e) => {
         if (e.target.files?.length) edit.upload(e.target.files);
@@ -187,6 +188,27 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
           </p>
         </section>
       ) : null}
+      <section className="space-y-1.5">
+        <label className="flex items-center justify-between gap-2">
+          <span className="font-medium">Beat grid</span>
+          <span className="flex items-center gap-1.5 text-[12px]">
+            <input
+              type="number"
+              min={0}
+              max={240}
+              className={`${field} w-16`}
+              value={edit.bpm || ""}
+              placeholder="BPM"
+              onChange={(e) => edit.setBpm(Math.max(0, Math.min(240, Number(e.target.value) || 0)))}
+            />
+            BPM
+          </span>
+        </label>
+        <label className="flex items-center gap-2 text-[12px]">
+          <input type="checkbox" checked={edit.snap} disabled={!edit.bpm} onChange={(e) => edit.setSnap(e.target.checked)} />
+          Snap Split to the beat
+        </label>
+      </section>
       <section className="space-y-2.5">
         <label className="flex items-center gap-2 font-medium">
           <input
@@ -454,7 +476,7 @@ export function PropertiesPanel({ edit }: { edit: Edit }) {
         />
         {volume > 1 ? <p className="text-[12px] text-fg-tertiary">You hear it louder in the preview too.</p> : null}
       </section>
-      {edit.kept.length > 1 && edit.partAtNow >= 0 ? (
+      {edit.partAtNow >= 0 ? (
         <section className="space-y-2">
           <p className="font-medium">
             This clip <span className="font-normal text-fg-tertiary">(part {edit.partAtNow + 1} of {edit.kept.length})</span>
@@ -466,7 +488,41 @@ export function PropertiesPanel({ edit }: { edit: Edit }) {
               </Btn>
             ))}
           </div>
-          <p className="text-[12px] text-fg-tertiary">Move the playhead onto another part to change its speed.</p>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(edit.kept[edit.partAtNow]?.reverse)}
+              onChange={(e) => edit.patchPart(edit.partAtNow, { reverse: e.target.checked })}
+            />
+            Play it backwards
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            <span>Hold the last frame</span>
+            <select
+              className={field}
+              value={edit.kept[edit.partAtNow]?.hold ?? 0}
+              onChange={(e) => edit.patchPart(edit.partAtNow, { hold: Number(e.target.value) })}
+            >
+              {[0, 1, 2, 3, 5].map((h) => (
+                <option key={h} value={h}>
+                  {h ? `${h} seconds` : "No"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div>
+            <p className="mb-1.5 text-[12px] text-fg-tertiary">Speed curve (slow down and speed up inside this part)</p>
+            <div className="grid grid-cols-3 gap-2">
+              {CURVES.map((c) => (
+                <Btn key={c.key} onClick={() => edit.applyCurve(edit.partAtNow, c.key)}>
+                  {c.label}
+                </Btn>
+              ))}
+            </div>
+          </div>
+          <p className="text-[12px] text-fg-tertiary">
+            Move the playhead onto another part to change it. Backwards and held frames show in the saved version, not the preview.
+          </p>
         </section>
       ) : null}
       <section className="space-y-2">
@@ -479,7 +535,59 @@ export function PropertiesPanel({ edit }: { edit: Edit }) {
           ))}
         </div>
       </section>
+      <MoreClips edit={edit} />
     </div>
+  );
+}
+
+/** Other videos played after this one. */
+function MoreClips({ edit }: { edit: Edit }) {
+  const { clips, setClips } = edit;
+  const patch = (id: number, p: Partial<(typeof clips)[number]>) =>
+    setClips(clips.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  return (
+    <section className="space-y-2">
+      <p className="font-medium">More clips after this one</p>
+      <Btn onClick={() => edit.pickFile("clip")}>
+        <Film size={13} /> Add a video
+      </Btn>
+      {clips.map((c) => (
+        <div key={c.id} className="space-y-1.5 rounded-lg border border-border bg-bg-subtle p-2">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            <button type="button" aria-label="Remove clip" onClick={() => setClips(clips.filter((x) => x.id !== c.id))} className={del}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-[12px]">
+            <label className="flex items-center gap-1">
+              from
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                className={`${field} w-16`}
+                value={c.start}
+                onChange={(e) => patch(c.id, { start: Math.max(0, Number(e.target.value) || 0) })}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              to
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                className={`${field} w-16`}
+                value={c.end ?? c.seconds ?? 0}
+                onChange={(e) => patch(c.id, { end: Math.max(c.start + 0.3, Number(e.target.value) || 0) })}
+              />
+            </label>
+            <span className="text-fg-tertiary">s</span>
+          </div>
+        </div>
+      ))}
+      <p className="text-[12px] text-fg-tertiary">Clips are joined in the saved version. The preview shows only the first video.</p>
+    </section>
   );
 }
 
@@ -606,6 +714,23 @@ export function StickersPanel({ edit }: { edit: Edit }) {
           </div>
           <Slider label={`Size ${Math.round(o.scale * 100)}%`} value={o.scale} min={0.05} max={1} step={0.01} onChange={(v) => patch(o.id, { scale: v })} />
           <Slider label={`Opacity ${Math.round(o.opacity * 100)}%`} value={o.opacity} min={0.1} max={1} step={0.05} onChange={(v) => patch(o.id, { opacity: v })} />
+          <label className="flex items-center justify-between gap-2 text-[12px]">
+            <span>Glide to</span>
+            <select
+              className={field}
+              value={o.moveTo ?? ""}
+              disabled={o.end === null}
+              title={o.end === null ? "Set an end time first" : undefined}
+              onChange={(e) => patch(o.id, { moveTo: (e.target.value || null) as Anchor | null })}
+            >
+              <option value="">Stays put</option>
+              {ANCHORS.map((a) => (
+                <option key={a} value={a}>
+                  {a.replace("_", " ")}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-mono text-fg-tertiary">
               {fmt(o.start)}–{o.end === null ? "end" : fmt(o.end)}

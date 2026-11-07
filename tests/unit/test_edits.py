@@ -13,7 +13,7 @@ import pytest
 from test_api import make_org
 
 import api_support
-from atelier.api.core.edits import Clock, EditIn, build_spec, describe, kept_parts
+from atelier.api.core.edits import Clock, EditIn, build_spec, describe, kept_parts, make_clock
 from atelier.engine.engine import Engine
 from conftest import FIXTURES
 from harness.fake_model import ScriptedModel, message, text, tool_use
@@ -356,3 +356,81 @@ def test_a_video_splits_into_its_picture_and_its_sound() -> None:
     assert outs["picture"]["media"] == "video" and outs["sound"]["media"] == "audio"
     silent = api.post(f"/jobs/{done['id']}/split", {"source": outs["picture"]["handle"]})
     assert silent.status_code == 422  # nothing left to separate
+
+
+def test_reverse_freeze_chromakey_and_glide_render(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    logo = engine.store.put_file(FIXTURES / "logo.png").handle
+    photo = engine.store.put_file(FIXTURES / "photo.jpg").handle
+
+    def run(inputs: dict[str, str], steps: list[dict[str, Any]]) -> dict[str, Any]:
+        steps[-1]["id"] = "out"
+        out = engine.run({"version": 1, "inputs": inputs, "steps": steps, "outputs": ["out"]})
+        return probe(engine.store.path(out.outputs["out"].hash))
+
+    info = run({"v": clip}, [{"id": "r", "op": "video.reverse", "in": ["v"], "args": {}},
+                             {"op": "export", "in": ["r"], "args": {"preset": "web_h264"}}])  # fmt: skip
+    assert float(info["format"]["duration"]) == pytest.approx(4.0, abs=0.15)
+    info = run({"v": clip}, [{"id": "f", "op": "video.freeze", "in": ["v"], "args": {"at": 1.0, "seconds": 2}},
+                             {"op": "export", "in": ["f"], "args": {"preset": "web_h264"}}])  # fmt: skip
+    assert float(info["format"]["duration"]) == pytest.approx(6.0, abs=0.2)
+    assert any(s["codec_type"] == "audio" for s in info["streams"])
+    info = run({"v": clip, "bg": photo}, [{"id": "k", "op": "video.chromakey", "in": ["v", "bg"], "args": {}},
+                                          {"op": "export", "in": ["k"], "args": {"preset": "web_h264"}}])  # fmt: skip
+    assert float(info["format"]["duration"]) == pytest.approx(4.0, abs=0.2)
+    info = run({"v": clip, "l": logo}, [{"id": "o", "op": "video.overlay", "in": ["v", "l"],
+                                         "args": {"anchor": "top_left", "move_to": "bottom_right", "start": 0.5, "end": 3}},
+                                        {"op": "export", "in": ["o"], "args": {"preset": "web_h264"}}])  # fmt: skip
+    assert float(info["format"]["duration"]) == pytest.approx(4.0, abs=0.2)
+
+
+def test_a_part_can_play_backwards_and_hold_a_frame(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    edit = EditIn(
+        source=clip,
+        parts=[
+            {"start": 0, "end": 2, "reverse": True},
+            {"start": 2.5, "end": 4, "hold": 1.5},
+        ],
+    )
+    parts = kept_parts(edit, 4.0)
+    assert make_clock(edit, parts).length == pytest.approx(2 + 1.5 + 1.5)
+    assert make_clock(edit, parts)(0.5) == pytest.approx(1.5)  # mirrored inside the reversed part
+    assert make_clock(edit, parts)(3.0) == pytest.approx(2.5)
+    spec = build_spec(edit, 4.0)
+    ops = [s["op"] for s in spec["steps"]]
+    assert "video.reverse" in ops and "video.freeze" in ops
+    out = engine.store.path(engine.run(spec).outputs["out"].hash)
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(5.0, abs=0.25)
+    assert "played backwards" in describe(edit, parts, 4.0)
+
+
+def test_touching_parts_with_different_speeds_stay_apart() -> None:
+    edit = EditIn(
+        source="asset:0123456789ab",
+        parts=[{"start": 0, "end": 2, "speed": 0.5}, {"start": 2, "end": 4, "speed": 2}],
+    )
+    parts = kept_parts(edit, 4.0)
+    assert parts == [(0.0, 2.0), (2.0, 4.0)]
+    clock = make_clock(edit, parts)
+    assert clock.length == pytest.approx(4 + 1)
+    same = EditIn(source=edit.source, parts=[{"start": 0, "end": 2}, {"start": 2, "end": 4}])
+    assert kept_parts(same, 4.0) == [(0.0, 4.0)]
+
+
+def test_more_clips_play_after_the_edited_one(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    edit = EditIn(
+        source=clip,
+        parts=[{"start": 0, "end": 2}],
+        append=[{"handle": clip, "start": 1, "end": 3}],
+        overlays=[{"handle": clip, "anchor": "top_left", "move_to": "bottom_right", "start": 0.2, "end": 1.5}],
+    )
+    assert "1 more clip added" in describe(edit, kept_parts(edit, 4.0), 4.0)
+    spec = build_spec(edit, 4.0, overlay_handles=[engine.store.put_file(FIXTURES / "logo.png").handle], append_handles=[clip])
+    assert [s["op"] for s in spec["steps"]].count("video.concat") == 1
+    out = engine.store.path(engine.run(spec).outputs["out"].hash)
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)

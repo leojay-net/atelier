@@ -316,9 +316,15 @@ class OverlayParams(Params):
     end: Timecode | None = Field(
         None, description="when it disappears; omit for the rest of the video"
     )
+    move_to: Anchor | None = Field(
+        None,
+        description="glide to this anchor between start and end (a keyframe: needs a time range)",
+    )
 
     @model_validator(mode="after")
     def _ordered(self) -> OverlayParams:
+        if self.move_to is not None and self.end is None:
+            raise ValueError("move_to needs an end time: the glide lasts from start to end")
         if self.end is not None and self.end <= self.start:
             raise ValueError(f"end ({self.end:g}s) must be after start ({self.start:g}s)")
         return self
@@ -378,6 +384,12 @@ def overlay(g: Graph, p: OverlayParams) -> None:
         (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
         (img,) = g.add("colorchannelmixer", {"aa": p.opacity}, ins=[img])
     args: dict[str, Any] = {"x": x, "y": y}
+    if p.move_to is not None and p.end is not None:
+        tx, ty = _ANCHOR[p.move_to]
+        x2 = round(tx * (g.width - ow - 2 * margin)) + margin
+        y2 = round(ty * (g.height - oh - 2 * margin)) + margin
+        k = f"clip((t-{num(p.start)})/{num(p.end - p.start)},0,1)"
+        args = {"x": f"{x}+({x2}-{x})*{k}", "y": f"{y}+({y2}-{y})*{k}", "eval": "frame"}
     if p.start > 0 or p.end is not None:
         window = (
             f"gte(t,{num(p.start)})" if p.end is None else f"between(t,{num(p.start)},{num(p.end)})"
@@ -613,3 +625,100 @@ def auto_reframe(g: Graph, p: AutoReframeParams) -> None:
         {"w": nw, "h": nh, "x": _piecewise_expr(times, xs_px), "y": _piecewise_expr(times, ys_px)},
     )
     g.width, g.height = nw, nh
+
+
+# -- reverse, freeze, chroma key ---------------------------------------------------------------
+
+MAX_REVERSE_SECONDS = 60.0  # ffmpeg holds the whole clip in memory to play it backwards
+
+
+class ReverseParams(Params):
+    pass
+
+
+@video_op(
+    name="video.reverse",
+    version="1.0.0",
+    params=ReverseParams,
+    description="play the video (and its sound) backwards",
+)
+def reverse(g: Graph, p: ReverseParams) -> None:
+    """Play the clip backwards. Limited to short clips because the whole clip is held in memory."""
+    del p
+    if g.duration is None or g.duration > MAX_REVERSE_SECONDS:
+        raise OpError(f"only clips of up to {MAX_REVERSE_SECONDS:g}s can be reversed: trim it first")
+    g.vf("reverse")
+    if g.has_audio:
+        g.af("areverse")
+
+
+class FreezeParams(Params):
+    at: Timecode = Field(description="the moment to hold (seconds)")
+    seconds: Timecode = Field(2.0, gt=0, le=10, description="how long to hold it")
+
+
+@video_op(
+    name="video.freeze",
+    version="1.0.0",
+    params=FreezeParams,
+    description="hold one frame of the video still for a few seconds",
+)
+def freeze(g: Graph, p: FreezeParams) -> None:
+    """Stop the picture on the frame at `at` for `seconds`, then carry on. The video gets that
+    much longer; its sound pauses (silence) for the same time."""
+    total = g.duration
+    if total is None or p.at >= total:
+        raise OpError("`at` is past the end of the video")
+    fps = g.fps or 30.0
+    g.vf("loop", {"loop": max(1, round(p.seconds * fps)), "size": 1, "start": round(p.at * fps)})
+    if g.has_audio:
+        assert g.audio is not None
+        head, tail = g.add("asplit", {"outputs": 2}, ins=[g.audio], outs=2, prefix="a")
+        (head,) = g.add("atrim", {"end": num(p.at)}, ins=[head], prefix="a")
+        (head,) = g.add("asetpts", {"expr": "PTS-STARTPTS"}, ins=[head], prefix="a")
+        (tail,) = g.add("atrim", {"start": num(p.at)}, ins=[tail], prefix="a")
+        (tail,) = g.add("asetpts", {"expr": "PTS-STARTPTS"}, ins=[tail], prefix="a")
+        (quiet,) = g.add(
+            "anullsrc",
+            {"r": g.sample_rate or 48000, "cl": "stereo", "d": num(p.seconds)},
+            ins=[],
+            prefix="a",
+        )
+        (g.audio,) = g.add("concat", {"n": 3, "v": 0, "a": 1}, ins=[head, quiet, tail], prefix="a")
+    g.duration = total + p.seconds
+
+
+class ChromaKeyParams(Params):
+    color: str = Field(
+        "#00ff00", pattern=r"^#[0-9a-fA-F]{6}$", description="the colour to remove (green screen)"
+    )
+    similarity: Fraction = Field(0.3, gt=0, le=1, description="how close a colour must be to go")
+    blend: Fraction = Field(0.1, ge=0, le=1, description="softens the edge of what is kept")
+
+
+@video_op(
+    name="video.chromakey",
+    version="1.0.0",
+    params=ChromaKeyParams,
+    inputs=(MediaType.VIDEO, MediaType.IMAGE),
+    description="remove a green screen and put the second input (a picture) behind the subject",
+)
+def chromakey(g: Graph, p: ChromaKeyParams) -> None:
+    """Key out `color` from the video and show the second input, scaled to fill the frame,
+    behind what is left. The video's sound is kept."""
+    assert g.video is not None
+    width, height = g.width, g.height
+    (bg,) = g.add(
+        "scale",
+        {"w": width, "h": height, "force_original_aspect_ratio": "increase"},
+        ins=[g.extra_label(0)],
+    )
+    (bg,) = g.add("crop", {"w": width, "h": height}, ins=[bg])
+    (fg,) = g.add(
+        "chromakey",
+        {"color": "0x" + p.color[1:], "similarity": p.similarity, "blend": p.blend},
+        ins=[g.video],
+        prefix="v",
+    )
+    (g.video,) = g.add("overlay", {"shortest": 1}, ins=[bg, fg], prefix="v")
+    g.origin = None

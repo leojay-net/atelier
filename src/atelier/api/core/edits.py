@@ -30,6 +30,8 @@ class Part(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
     speed: float = Field(1.0, ge=0.25, le=4)  # this part only (on top of the whole-video speed)
+    reverse: bool = False  # play this part backwards
+    hold: float = Field(0.0, ge=0, le=10)  # freeze its last frame for this many seconds
 
 
 class Adjust(BaseModel):
@@ -62,6 +64,16 @@ class OverlayItem(BaseModel):
     anchor: Literal[*ANCHORS] = "top_right"
     scale: float = Field(0.2, gt=0, le=1)  # width as a fraction of the video's
     opacity: float = Field(1.0, gt=0, le=1)
+    start: float = Field(0.0, ge=0)
+    end: float | None = Field(None, gt=0)
+    move_to: Literal[*ANCHORS] | None = None  # glide to this spot by the end (needs `end`)
+
+
+class AppendItem(BaseModel):
+    """Another video (or part of one) played after the edited one."""
+
+    model_config = ConfigDict(extra="forbid")
+    handle: str
     start: float = Field(0.0, ge=0)
     end: float | None = Field(None, gt=0)
 
@@ -122,6 +134,7 @@ class EditIn(BaseModel):
     transition: Literal[*TRANSITIONS] | None = None  # between cut parts
     captions: CaptionsItem | None = None
     overlays: list[OverlayItem] = Field(default_factory=list, max_length=20)
+    append: list[AppendItem] = Field(default_factory=list, max_length=8)
     denoise: bool = False  # reduce noise in the video's own sound
     loudnorm: bool = False  # even out the final loudness (-14 LUFS)
     stabilize: bool = False
@@ -144,14 +157,19 @@ class Clock:
         speed: float,
         speeds: list[float] | None = None,
         overlap: float = 0.0,
+        reverses: list[bool] | None = None,
+        holds: list[float] | None = None,
     ) -> None:
         self.parts, self.speed = parts, speed
+        self.reverses = reverses or [False] * len(parts)
+        self.holds = holds or [0.0] * len(parts)
         self.speeds = speeds or [1.0] * len(parts)
         self.overlap = overlap  # seconds two neighbouring parts share in a crossfade
 
     @property
     def length(self) -> float:
         total = sum((b - a) / sp for (a, b), sp in zip(self.parts, self.speeds, strict=True))
+        total += sum(self.holds)
         return (total - self.overlap * (len(self.parts) - 1)) / self.speed
 
     def __call__(self, t: float) -> float | None:
@@ -160,8 +178,11 @@ class Clock:
         before = 0.0
         for i, ((a, b), sp) in enumerate(zip(self.parts, self.speeds, strict=True)):
             if t < b:
-                return (before + max(0.0, t - a) / sp - self.overlap * i) / self.speed
-            before += (b - a) / sp
+                inside = max(0.0, t - a)
+                if self.reverses[i]:
+                    inside = max(0.0, b - max(t, a))
+                return (before + inside / sp - self.overlap * i) / self.speed
+            before += (b - a) / sp + self.holds[i]
         return None
 
 
@@ -172,6 +193,22 @@ def part_speeds(edit: EditIn, parts: list[tuple[float, float]]) -> list[float]:
         owner = next((p for p in edit.parts if p.start <= a + 1e-6 < p.end), None)
         out.append(owner.speed if owner else 1.0)
     return out
+
+
+def part_flags(edit: EditIn, parts: list[tuple[float, float]]) -> tuple[list[bool], list[float]]:
+    """Which kept parts play backwards, and how long each holds its last frame."""
+    rev, hold = [], []
+    for a, _ in parts:
+        owner = next((p for p in edit.parts if p.start <= a + 1e-6 < p.end), None)
+        rev.append(bool(owner and owner.reverse))
+        hold.append(owner.hold if owner else 0.0)
+    return rev, hold
+
+
+def make_clock(edit: EditIn, parts: list[tuple[float, float]]) -> Clock:
+    speeds = part_speeds(edit, parts)
+    rev, hold = part_flags(edit, parts)
+    return Clock(parts, edit.speed, speeds, overlap_for(edit, parts, speeds), rev, hold)
 
 
 def overlap_for(edit: EditIn, parts: list[tuple[float, float]], speeds: list[float]) -> float:
@@ -186,15 +223,24 @@ def overlap_for(edit: EditIn, parts: list[tuple[float, float]], speeds: list[flo
 def kept_parts(edit: EditIn, duration: float) -> list[tuple[float, float]]:
     """The parts to keep, in order, clipped to the video, short scraps dropped, overlaps
     merged."""
-    raw = sorted((p.start, min(p.end, duration)) for p in edit.parts) or [(0.0, duration)]
+    raw = sorted(
+        (p.start, min(p.end, duration), (p.speed, p.reverse, p.hold)) for p in edit.parts
+    ) or [(0.0, duration, (1.0, False, 0.0))]
     merged: list[tuple[float, float]] = []
-    for a, b in raw:
+    kinds: list[tuple[float, bool, float]] = []
+    for a, b, kind in raw:
         if b - a < MIN_PART:
             continue
-        if merged and a <= merged[-1][1]:
+        # neighbours that touch or overlap are one part, unless they play differently
+        if merged and a <= merged[-1][1] and kind == kinds[-1]:
             merged[-1] = (merged[-1][0], max(merged[-1][1], b))
         else:
+            if merged and a < merged[-1][1]:
+                a = merged[-1][1]  # no overlap between two different parts
+                if b - a < MIN_PART:
+                    continue
             merged.append((a, b))
+            kinds.append(kind)
     if not merged:
         raise ValueError("nothing is left to keep: keep at least a fraction of a second")
     return merged
@@ -209,6 +255,10 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append(f"speed {edit.speed:g}x")
     if any(p.speed != 1 for p in edit.parts):
         done.append("a part at its own speed")
+    if any(p.reverse for p in edit.parts):
+        done.append("a part played backwards")
+    if any(p.hold for p in edit.parts):
+        done.append("a frozen moment")
     if edit.shape != "original":
         done.append(f"{edit.shape} shape")
     if edit.volume != 1:
@@ -237,6 +287,8 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append("even loudness")
     if edit.stabilize:
         done.append("steadied")
+    if edit.append:
+        done.append(f"{len(edit.append)} more clip{'s' if len(edit.append) > 1 else ''} added")
     return "Edited by hand: " + (", ".join(done) or "no changes")
 
 
@@ -247,12 +299,14 @@ def build_spec(
     music_handle: str | None = None,
     has_audio: bool = True,
     overlay_handles: list[str] | None = None,
+    append_handles: list[str] | None = None,
 ) -> dict[str, Any]:
     """The engine spec for an edit of a video `duration` seconds long."""
     parts = kept_parts(edit, duration)
     speeds = part_speeds(edit, parts)
     overlap = overlap_for(edit, parts, speeds)
-    clock = Clock(parts, edit.speed, speeds, overlap)
+    reverses, holds = part_flags(edit, parts)
+    clock = Clock(parts, edit.speed, speeds, overlap, reverses, holds)
     inputs: dict[str, str] = {"v": edit.source}
     steps: list[dict[str, Any]] = []
     last = "v"
@@ -278,12 +332,20 @@ def build_spec(
                       "args": {"mode": "replace", "fade_out": 0}})  # fmt: skip
         last = sid
 
-    whole = len(parts) == 1 and parts[0] == (0.0, duration) and speeds == [1.0]
+    whole = (
+        len(parts) == 1 and parts[0] == (0.0, duration) and speeds == [1.0]
+        and not reverses[0] and not holds[0]
+    )  # fmt: skip
     if not whole:
         if len(parts) == 1:
             add("video.trim", {"start": round(parts[0][0], 3), "end": round(parts[0][1], 3)})
             if speeds[0] != 1:
                 add("video.speed", {"factor": speeds[0]})
+            if reverses[0]:
+                add("video.reverse", {})
+            if holds[0]:
+                add("video.freeze", {"at": round(max(0.0, (parts[0][1] - parts[0][0]) / speeds[0] - 0.1), 3),
+                                     "seconds": holds[0]})  # fmt: skip
         else:
             pieces = []
             for i, ((a, b), sp) in enumerate(zip(parts, speeds, strict=True)):
@@ -296,6 +358,14 @@ def build_spec(
                     steps.append({"id": f"q{i}", "op": "video.speed", "in": piece,
                                   "args": {"factor": sp}})  # fmt: skip
                     piece = f"q{i}"
+                if reverses[i]:
+                    steps.append({"id": f"r{i}", "op": "video.reverse", "in": piece, "args": {}})
+                    piece = f"r{i}"
+                if holds[i]:
+                    at = round(max(0.0, (b - a) / sp - 0.1), 3)
+                    steps.append({"id": f"h{i}", "op": "video.freeze", "in": piece,
+                                  "args": {"at": at, "seconds": holds[i]}})  # fmt: skip
+                    piece = f"h{i}"
                 pieces.append(piece)
             join: dict[str, Any] = {}
             if overlap:
@@ -314,6 +384,20 @@ def build_spec(
         )  # fmt: skip
     if not edit.adjust.neutral:
         add("video.color", edit.adjust.model_dump())
+    if edit.append and append_handles:
+        pieces = [last]
+        for i, item in enumerate(edit.append[: len(append_handles)]):
+            inputs[f"ap{i}"] = append_handles[i]
+            piece = f"ap{i}"
+            if item.start > 0 or item.end is not None:
+                trim: dict[str, Any] = {"start": round(item.start, 3)}
+                if item.end is not None:
+                    trim["end"] = round(item.end, 3)
+                steps.append({"id": f"at{i}", "op": "video.trim", "in": piece, "args": trim})
+                piece = f"at{i}"
+            pieces.append(piece)
+        steps.append({"id": "appended", "op": "video.concat", "in": pieces, "args": {"mode": "fill"}})
+        last = "appended"
     if edit.captions:
         # written from the speech of the video as it is now, so cuts and speed are already in it
         steps.append({"id": "heard", "op": "transcribe", "in": [last], "args": {}})
@@ -332,6 +416,8 @@ def build_spec(
                                  "opacity": ov.opacity, "start": round(start, 3)}  # fmt: skip
         if ov.end is not None and (end := clock(ov.end)) is not None and end > start:
             oargs["end"] = round(end, 3)
+            if ov.move_to:
+                oargs["move_to"] = ov.move_to
         add("video.overlay", oargs, [f"ov{i}"])
     for item in edit.texts:
         start = clock(item.start)

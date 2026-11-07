@@ -79,11 +79,13 @@ the episode, audio.mix [it, music] (length voice), audio.loudnorm (target_lufs -
 should not be quiet), video.soundtrack replace.
 
 Editing a video they already have
-- A look: video.color (brightness -1..1; contrast, saturation 1 = unchanged; warmth -1..1). \
-Warm: warmth 0.3. Black and white: saturation 0. Dramatic: contrast 1.3. Keep changes modest.
+- A look: video.color (brightness -1..1; contrast, saturation, gamma 1 = unchanged). Black and \
+white: saturation 0. Dramatic: contrast 1.3. Brighter: gamma 1.2.
 - Captions on speech in a video: transcribe it, then video.captions. Poor sound: audio.extract, \
 audio.denoise, audio.loudnorm, video.soundtrack replace. Shaky: video.stabilize.
-- Logo or sticker on top: video.overlay (anchor, scale 0.1-0.5, start, end). Rerun the earlier \
+- Logo or sticker on top: video.overlay (anchor, scale 0.1-0.5, start, end; move_to glides it). \
+Backwards: video.reverse. Hold a frame: video.freeze (at, seconds). Green screen: video.chromakey \
+with the new background picture. Rerun the earlier \
 spec with the change; never start over.
 
 - "Follow-up to an earlier request": the earlier result is among the assets; change it as asked \

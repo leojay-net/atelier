@@ -850,8 +850,15 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         parts = edits.kept_parts(body, duration)
     except ValueError as e:
         raise ApiError(422, "bad_request", str(e)) from None
-    speeds = edits.part_speeds(body, parts)
-    length = edits.Clock(parts, body.speed, speeds, edits.overlap_for(body, parts, speeds)).length
+    length = edits.make_clock(body, parts).length
+    append_handles: list[str] = []
+    for item in body.append:
+        extra = _resolve(engine, item.handle)
+        if extra.media is not MediaType.VIDEO:
+            raise ApiError(422, "bad_request", "only videos can be added after the clip")
+        append_handles.append(extra.handle)
+        whole = float(engine.probe(extra).get("duration") or 0.0)
+        length += max(0.0, min(item.end or whole, whole) - item.start)
     services.check_rate(request.api_key)  # type: ignore[attr-defined]
     services.check_quota(org)
     made: list[tuple[str, str]] = []
@@ -875,7 +882,7 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     overlay_handles = [_resolve(engine, o.handle).handle for o in body.overlays]
     has_audio = bool(engine.probe(source).get("audio"))
     spec = edits.build_spec(
-        body, duration, voice_handle, music_handle, has_audio, overlay_handles
+        body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles
     )
     _validated(engine, spec)
     job = Job.objects.create(
