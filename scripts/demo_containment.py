@@ -71,10 +71,21 @@ def main() -> None:
         "Execution timeout safely terminates runaway process within 5 seconds",
     )
 
-    # 3. Network Exfiltration Attempt
+    # 3. Fork bomb: every process makes two more, forever. The process limit is the only thing
+    # standing between this and a frozen host, so show the count and the cap side by side.
+    run_test(
+        "Fork Bomb",
+        # shell builtins only: once the bomb fills the process table even `ls` cannot start
+        "python3 -c 'import os\nwhile True: os.fork()' >/dev/null 2>&1 & sleep 2; "
+        "set -- /proc/[0-9]*; echo \"processes alive: $#\"; "
+        "read -r cap < /sys/fs/cgroup/pids.max; echo \"process limit  : $cap\"",
+        "Process limit (--pids-limit 256) caps the bomb; the host never runs out of processes",
+    )
+
+    # 4. Network Exfiltration Attempt
     run_test(
         "Network Exfiltration Attempt",
-        "curl -m 2 https://api.vultr.com 2>&1 || ping -c 1 8.8.8.8 2>&1 || echo 'Network blocked'",
+        "python3 -c \"import socket; socket.create_connection(('8.8.8.8', 53), 3)\" 2>&1 | tail -1",
         "Isolated container has --network none; zero external access",
     )
 
