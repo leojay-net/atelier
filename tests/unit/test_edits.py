@@ -680,3 +680,26 @@ def test_polygon_mask_zoom_animated_look_and_clip_order() -> None:
     concat = ops["video.concat"]["in"]
     assert concat[0] == "ap0" and concat[2] == "ap1" and concat[1] not in ("ap0", "ap1")
     assert "a drawn mask" in describe(edit, [(0.0, 10.0)], 10.0)
+
+
+def test_captions_on_a_silent_video_are_skipped_not_failed(tmp_path: Path) -> None:
+    silent = tmp_path / "silent.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-i", str(CLIP), "-an", "-c:v", "copy", str(silent)], check=True
+    )
+    _, api = make_org("acme")
+    clip = api.upload("silent.mp4", silent.read_bytes()).json()["handle"]
+    spec = {"in": clip, "ops": [["export", {"preset": "web_h264"}]]}
+    body = json.dumps({"title": "Silent", "summary": "Done.", "warnings": [], "question": ""})
+    api_support.model = ScriptedModel(
+        message([tool_use("run_pipeline", {"spec": spec})], "tool_use"),
+        message([text(body)], "end_turn"),
+    )
+    first = api.post("/jobs", {"prompt": "export it", "assets": [clip]}).json()
+    (video,) = [o["handle"] for o in first["result"]["outputs"].values()]
+    res = api.post(f"/jobs/{first['id']}/edit", {"source": video, "captions": {"style": "bold_pop"}})
+    assert res.status_code == 202, res.content
+    saved = res.json()
+    assert saved["status"] == "succeeded", saved.get("error")
+    assert "no captions" in saved["prompt"]
+    assert not any(s["op"] == "transcribe" for s in saved["spec"]["steps"])

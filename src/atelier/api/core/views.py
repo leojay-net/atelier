@@ -884,6 +884,9 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     overlay_handles = [i.handle for i in overlay_infos]
     overlay_media = [i.media.value for i in overlay_infos]
     has_audio = bool(engine.probe(source).get("audio"))
+    skipped_captions = body.captions is not None and not has_audio
+    if skipped_captions:  # captions are written from the video's own sound; a silent video has none
+        body = body.model_copy(update={"captions": None})
     spec = edits.build_spec(
         body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles, overlay_media, green_handle
     )
@@ -896,7 +899,10 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         created_by=request.api_key,  # type: ignore[attr-defined]
         kind="spec",
         spec=spec,
-        prompt=edits.DRAFT_PROMPT if body.draft else edits.describe(body, parts, duration),
+        prompt=edits.DRAFT_PROMPT
+        if body.draft
+        else edits.describe(body, parts, duration)
+        + (" (no captions: this video has no sound to write them from)" if skipped_captions else ""),
         assets=[source.handle],
         voice=parent.voice,
     )
