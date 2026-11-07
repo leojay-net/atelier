@@ -706,7 +706,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     kept.some((p) => p.reverse || (p.hold ?? 0) > 0) ||
     (transition !== null && kept.length > 1) ||
     overlays.some((o) => o.moveTo && o.end !== null);
-  async function renderDraft() {
+  async function renderDraft(withoutCaptions = false) {
     const token = ++draftToken.current;
     const mine = sig;
     setDraft({ phase: "rendering", handle: "", note: "", sig: mine });
@@ -714,7 +714,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       const r = await fetch(`/api/proxy/jobs/${jobId}/edit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...editBody(), draft: true }),
+        body: JSON.stringify({ ...editBody(), draft: true, ...(withoutCaptions ? { captions: null } : {}) }),
       });
       if (!r.ok) throw new Error((await readApiError(r)).message);
       let job: Job = await r.json();
@@ -725,7 +725,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       }
       if (token !== draftToken.current) return; // a newer change started another one
       const out = job.result?.outputs ? Object.values(job.result.outputs)[0] : undefined;
-      if (job.status === "succeeded" && out) setDraft({ phase: "ready", handle: out.handle, note: "", sig: mine });
+      if (job.status === "succeeded" && out)
+        setDraft({ phase: "ready", handle: out.handle, note: withoutCaptions ? "No speech was found, so the preview has no captions." : "", sig: mine });
+      else if (!withoutCaptions && captions.on && /no speech/i.test(job.error)) return renderDraft(true);
       else setDraft({ phase: "error", handle: "", note: job.error || "The preview could not be made.", sig: mine });
     } catch (e) {
       if (token === draftToken.current)
