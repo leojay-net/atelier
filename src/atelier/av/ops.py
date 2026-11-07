@@ -833,8 +833,11 @@ def mask(g: Graph, p: MaskParams) -> None:
     feather = max(p.feather, 0.004)
     # the shape is drawn once, as a grey picture (white = kept), not worked out on every frame
     yy, xx = np.mgrid[0 : g.height, 0 : g.width].astype(np.float32)
-    u = (xx + 0.5 - g.width / 2) / (g.width / 2 * (1 - p.inset))
-    v = (yy + 0.5 - g.height / 2) / (g.height / 2 * (1 - p.inset))
+    half_x, half_y = g.width / 2, g.height / 2
+    if p.shape == "circle":  # a true circle: as wide as the short side
+        half_x = half_y = min(half_x, half_y)
+    u = (xx + 0.5 - g.width / 2) / (half_x * (1 - p.inset))
+    v = (yy + 0.5 - g.height / 2) / (half_y * (1 - p.inset))
     if p.shape == "circle":
         edge = 1 - np.hypot(u, v)
     elif p.shape == "diamond":
