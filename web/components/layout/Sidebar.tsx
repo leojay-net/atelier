@@ -8,6 +8,7 @@ import {
   Drama,
   Loader2,
   Library,
+  Menu,
   ListChecks,
   LogOut,
   MessageSquare,
@@ -210,6 +211,7 @@ export function RecentChats({ active }: { active: string | null }) {
 export function Sidebar({ email }: { email: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const inStudio = pathname === "/" || pathname.startsWith("/studio");
   const activeChat = pathname.startsWith("/studio/") ? pathname.split("/")[2] ?? null : null;
 
@@ -221,7 +223,31 @@ export function Sidebar({ email }: { email: string }) {
   if (pathname.startsWith("/studio")) return null;
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-bg-subtle">
+    <>
+    <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-2.5 border-b border-border bg-bg/90 px-4 backdrop-blur-md md:hidden">
+      <button type="button" aria-label="Open the menu" onClick={() => setOpen(true)} className="-ml-1.5 grid h-9 w-9 place-items-center rounded-full text-fg-secondary hover:bg-bg-inset hover:text-fg">
+        <Menu size={20} />
+      </button>
+      <Logo size={24} />
+      <span className="text-[15px] font-semibold tracking-[-0.02em] text-fg">Atelier</span>
+    </header>
+    <div
+      aria-hidden
+      onClick={() => setOpen(false)}
+      className={clsx(
+        "fixed inset-0 z-40 bg-black/45 backdrop-blur-[3px] transition-opacity duration-300 md:hidden",
+        open ? "opacity-100" : "pointer-events-none opacity-0",
+      )}
+    />
+    <aside
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a, button[type=submit]")) setOpen(false);
+      }}
+      className={clsx(
+        "fixed inset-y-0 left-0 z-50 flex h-full w-72 shrink-0 flex-col border-r border-border bg-bg-subtle transition-transform duration-300 ease-[var(--ease-out)] md:static md:z-auto md:w-60 md:translate-x-0",
+        open ? "translate-x-0 shadow-[var(--shadow-dialog)]" : "-translate-x-full",
+      )}
+    >
       <div className="flex h-16 items-center gap-2.5 px-5">
         <Logo size={26} />
         <span className="text-[16px] font-semibold tracking-[-0.02em] text-fg">Atelier</span>
@@ -230,7 +256,10 @@ export function Sidebar({ email }: { email: string }) {
       <div className="px-3">
         <button
           type="button"
-          onClick={newChat}
+          onClick={() => {
+            setOpen(false);
+            newChat();
+          }}
           className={clsx(
             "flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[14px] font-medium transition-colors",
             inStudio && !activeChat
@@ -285,5 +314,6 @@ export function Sidebar({ email }: { email: string }) {
         </form>
       </div>
     </aside>
+    </>
   );
 }

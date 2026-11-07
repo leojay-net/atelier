@@ -263,7 +263,7 @@ export function Home() {
     >
       <section>
         <div className="flex items-start justify-between">
-          <h1 className="animate-rise text-[34px] font-semibold leading-tight tracking-[-0.03em] text-fg">What do you want to make?</h1>
+          <h1 className="animate-rise text-[26px] font-semibold sm:text-[34px] leading-tight tracking-[-0.03em] text-fg">What do you want to make?</h1>
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event(TOUR_EVENT))}
@@ -302,7 +302,7 @@ export function Home() {
             placeholder="e.g. a 15-second reel from my photos with upbeat music"
             className="w-full resize-none bg-transparent px-2 py-1.5 text-[16px] leading-relaxed text-fg outline-none placeholder:text-fg-tertiary"
           />
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <button
               type="button"
               data-tour="attach"
@@ -322,7 +322,7 @@ export function Home() {
                 e.target.value = "";
               }}
             />
-            <div data-tour="voice" className="min-w-0 flex-1">
+            <div data-tour="voice" className="min-w-0 flex-1 basis-40">
               <VoicePicker value={voice} onChange={setVoice} />
             </div>
             <button
