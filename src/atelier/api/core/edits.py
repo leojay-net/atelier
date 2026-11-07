@@ -16,10 +16,54 @@ SHAPES = {"portrait": "9:16", "square": "1:1", "landscape": "16:9"}
 MIN_PART = 0.2  # seconds: shorter kept parts are dropped
 
 
+ANCHORS = (
+    "top_left", "top_center", "top_right", "center_left", "center", "center_right",
+    "bottom_left", "bottom_center", "bottom_right",
+)  # fmt: skip
+TRANSITIONS = ("fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright",
+               "circlecrop", "fadeblack", "fadewhite")  # fmt: skip
+TRANSITION_SECONDS = 0.5
+
+
 class Part(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start: float = Field(ge=0)
     end: float = Field(gt=0)
+    speed: float = Field(1.0, ge=0.25, le=4)  # this part only (on top of the whole-video speed)
+
+
+class Adjust(BaseModel):
+    """The look of the picture (filters are just named sets of these four numbers)."""
+
+    model_config = ConfigDict(extra="forbid")
+    brightness: float = Field(0.0, ge=-1, le=1)
+    contrast: float = Field(1.0, ge=0, le=3)
+    saturation: float = Field(1.0, ge=0, le=3)
+    gamma: float = Field(1.0, ge=0.1, le=3)
+
+    @property
+    def neutral(self) -> bool:
+        return (self.brightness, self.contrast, self.saturation, self.gamma) == (0, 1, 1, 1)
+
+
+class CaptionsItem(BaseModel):
+    """Captions written from the speech in the edited video, burned in."""
+
+    model_config = ConfigDict(extra="forbid")
+    style: Literal["clean", "bold_pop", "minimal_lower"] = "bold_pop"
+    position: Literal["auto", "top", "upper_safe", "middle", "lower_safe", "bottom"] = "auto"
+
+
+class OverlayItem(BaseModel):
+    """A picture (sticker, logo, photo) laid over the video for a while."""
+
+    model_config = ConfigDict(extra="forbid")
+    handle: str
+    anchor: Literal[*ANCHORS] = "top_right"
+    scale: float = Field(0.2, gt=0, le=1)  # width as a fraction of the video's
+    opacity: float = Field(1.0, gt=0, le=1)
+    start: float = Field(0.0, ge=0)
+    end: float | None = Field(None, gt=0)
 
 
 class TextItem(BaseModel):
@@ -30,6 +74,8 @@ class TextItem(BaseModel):
     position: Literal["top", "upper_safe", "middle", "lower_safe", "bottom"] = "lower_safe"
     style: Literal["clean", "bold_pop", "minimal_lower"] = "bold_pop"
     size: float | None = Field(None, gt=0, le=0.3)
+    color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
+    animate: Literal["auto", "none", "rise", "pop"] = "auto"
 
 
 class SoundItem(BaseModel):
@@ -70,6 +116,15 @@ class EditIn(BaseModel):
     voiceover: VoiceItem | None = None
     music: MusicItem | None = None
     sounds: list[SoundItem] = Field(default_factory=list, max_length=80)
+    adjust: Adjust = Field(default_factory=Adjust)  # filters and colour
+    fade_in: float = Field(0.0, ge=0, le=5)  # from black (and silence), seconds
+    fade_out: float = Field(0.0, ge=0, le=5)
+    transition: Literal[*TRANSITIONS] | None = None  # between cut parts
+    captions: CaptionsItem | None = None
+    overlays: list[OverlayItem] = Field(default_factory=list, max_length=20)
+    denoise: bool = False  # reduce noise in the video's own sound
+    loudnorm: bool = False  # even out the final loudness (-14 LUFS)
+    stabilize: bool = False
 
     @model_validator(mode="after")
     def _ordered(self) -> EditIn:
@@ -80,24 +135,52 @@ class EditIn(BaseModel):
 
 
 class Clock:
-    """Source time → edited time: cut parts removed, then the speed applied."""
+    """Source time → edited time: cut parts removed, each part's own speed, the crossfades
+    between parts, then the whole-video speed."""
 
-    def __init__(self, parts: list[tuple[float, float]], speed: float) -> None:
+    def __init__(
+        self,
+        parts: list[tuple[float, float]],
+        speed: float,
+        speeds: list[float] | None = None,
+        overlap: float = 0.0,
+    ) -> None:
         self.parts, self.speed = parts, speed
+        self.speeds = speeds or [1.0] * len(parts)
+        self.overlap = overlap  # seconds two neighbouring parts share in a crossfade
 
     @property
     def length(self) -> float:
-        return sum(b - a for a, b in self.parts) / self.speed
+        total = sum((b - a) / sp for (a, b), sp in zip(self.parts, self.speeds, strict=True))
+        return (total - self.overlap * (len(self.parts) - 1)) / self.speed
 
     def __call__(self, t: float) -> float | None:
         """Where `t` lands in the edited video; a time inside a cut moves to the next kept
         part; None after the last one."""
         before = 0.0
-        for a, b in self.parts:
+        for i, ((a, b), sp) in enumerate(zip(self.parts, self.speeds, strict=True)):
             if t < b:
-                return (before + max(0.0, t - a)) / self.speed
-            before += b - a
+                return (before + max(0.0, t - a) / sp - self.overlap * i) / self.speed
+            before += (b - a) / sp
         return None
+
+
+def part_speeds(edit: EditIn, parts: list[tuple[float, float]]) -> list[float]:
+    """The speed of each kept part: that of the (first) source part it came from."""
+    out = []
+    for a, _ in parts:
+        owner = next((p for p in edit.parts if p.start <= a + 1e-6 < p.end), None)
+        out.append(owner.speed if owner else 1.0)
+    return out
+
+
+def overlap_for(edit: EditIn, parts: list[tuple[float, float]], speeds: list[float]) -> float:
+    """The crossfade between parts, or 0 when there is none or a part is too short for it."""
+    if not edit.transition or len(parts) < 2:
+        return 0.0
+    if any((b - a) / sp < 2 * TRANSITION_SECONDS + 0.1 for (a, b), sp in zip(parts, speeds, strict=True)):
+        return 0.0
+    return TRANSITION_SECONDS
 
 
 def kept_parts(edit: EditIn, duration: float) -> list[tuple[float, float]]:
@@ -124,6 +207,8 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append("trimmed" if len(parts) == 1 else f"cut into {len(parts)} parts")
     if edit.speed != 1:
         done.append(f"speed {edit.speed:g}x")
+    if any(p.speed != 1 for p in edit.parts):
+        done.append("a part at its own speed")
     if edit.shape != "original":
         done.append(f"{edit.shape} shape")
     if edit.volume != 1:
@@ -136,6 +221,22 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append("music")
     if edit.sounds:
         done.append(f"{len(edit.sounds)} sound effect{'s' if len(edit.sounds) > 1 else ''}")
+    if not edit.adjust.neutral:
+        done.append("a new look")
+    if edit.captions:
+        done.append("captions")
+    if edit.overlays:
+        done.append(f"{len(edit.overlays)} sticker{'s' if len(edit.overlays) > 1 else ''}")
+    if edit.fade_in or edit.fade_out:
+        done.append("fades")
+    if edit.transition:
+        done.append(f"{edit.transition} transitions")
+    if edit.denoise:
+        done.append("less noise")
+    if edit.loudnorm:
+        done.append("even loudness")
+    if edit.stabilize:
+        done.append("steadied")
     return "Edited by hand: " + (", ".join(done) or "no changes")
 
 
@@ -144,41 +245,94 @@ def build_spec(
     duration: float,
     voice_handle: str | None = None,
     music_handle: str | None = None,
+    has_audio: bool = True,
+    overlay_handles: list[str] | None = None,
 ) -> dict[str, Any]:
     """The engine spec for an edit of a video `duration` seconds long."""
     parts = kept_parts(edit, duration)
-    clock = Clock(parts, edit.speed)
+    speeds = part_speeds(edit, parts)
+    overlap = overlap_for(edit, parts, speeds)
+    clock = Clock(parts, edit.speed, speeds, overlap)
     inputs: dict[str, str] = {"v": edit.source}
     steps: list[dict[str, Any]] = []
     last = "v"
 
-    def add(op: str, args: dict[str, Any], extra: list[str] | None = None) -> None:
+    def add(op: str, args: dict[str, Any], extra: list[str] | None = None) -> str:
         nonlocal last
         sid = f"s{len(steps)}"
         steps.append({"id": sid, "op": op, "in": [last, *(extra or [])], "args": args})
         last = sid
+        return sid
 
-    if parts != [(0.0, duration)]:
+    def through_audio(*ops: tuple[str, dict[str, Any]]) -> None:
+        """Pull the sound out of the video, run it through `ops`, and put it back."""
+        nonlocal last
+        video = last
+        prev = video
+        for op, args in ops:
+            sid = f"a{len(steps)}"
+            steps.append({"id": sid, "op": op, "in": [prev], "args": args})
+            prev = sid
+        sid = f"s{len(steps)}"
+        steps.append({"id": sid, "op": "video.soundtrack", "in": [video, prev],
+                      "args": {"mode": "replace", "fade_out": 0}})  # fmt: skip
+        last = sid
+
+    whole = len(parts) == 1 and parts[0] == (0.0, duration) and speeds == [1.0]
+    if not whole:
         if len(parts) == 1:
             add("video.trim", {"start": round(parts[0][0], 3), "end": round(parts[0][1], 3)})
+            if speeds[0] != 1:
+                add("video.speed", {"factor": speeds[0]})
         else:
             pieces = []
-            for i, (a, b) in enumerate(parts):
+            for i, ((a, b), sp) in enumerate(zip(parts, speeds, strict=True)):
                 steps.append(
                     {"id": f"p{i}", "op": "video.trim", "in": "v",
                      "args": {"start": round(a, 3), "end": round(b, 3)}}
                 )  # fmt: skip
-                pieces.append(f"p{i}")
-            steps.append({"id": "joined", "op": "video.concat", "in": pieces, "args": {}})
+                piece = f"p{i}"
+                if sp != 1:
+                    steps.append({"id": f"q{i}", "op": "video.speed", "in": piece,
+                                  "args": {"factor": sp}})  # fmt: skip
+                    piece = f"q{i}"
+                pieces.append(piece)
+            join: dict[str, Any] = {}
+            if overlap:
+                join = {"fade": overlap, "transition": edit.transition}
+            steps.append({"id": "joined", "op": "video.concat", "in": pieces, "args": join})
             last = "joined"
     if edit.speed != 1:
         add("video.speed", {"factor": edit.speed})
+    if edit.stabilize:
+        add("video.stabilize", {})
     if edit.shape != "original":
         add(
             "video.reframe",
             {"aspect": SHAPES[edit.shape], "mode": "fill",
              "focus_x": edit.focus_x, "focus_y": edit.focus_y},
         )  # fmt: skip
+    if not edit.adjust.neutral:
+        add("video.color", edit.adjust.model_dump())
+    if edit.captions:
+        # written from the speech of the video as it is now, so cuts and speed are already in it
+        steps.append({"id": "heard", "op": "transcribe", "in": [last], "args": {}})
+        cap: dict[str, Any] = {"style": edit.captions.style}
+        if edit.captions.position != "auto":
+            cap["position"] = edit.captions.position
+        add("video.captions", cap, ["heard"])
+    for i, ov in enumerate(edit.overlays):
+        if i >= len(overlay_handles or []):
+            break
+        start = clock(ov.start)
+        if start is None:
+            continue
+        inputs[f"ov{i}"] = (overlay_handles or [])[i]
+        oargs: dict[str, Any] = {"anchor": ov.anchor, "scale": ov.scale,
+                                 "opacity": ov.opacity, "start": round(start, 3)}  # fmt: skip
+        if ov.end is not None and (end := clock(ov.end)) is not None and end > start:
+            oargs["end"] = round(end, 3)
+        add("video.overlay", oargs, [f"ov{i}"])
     for item in edit.texts:
         start = clock(item.start)
         if start is None:
@@ -191,7 +345,13 @@ def build_spec(
             args["end"] = round(end, 3)
         if item.size:
             args["size"] = item.size
+        if item.color:
+            args["color"] = item.color
+        if item.animate != "auto":
+            args["animate"] = item.animate
         add("video.text", args)
+    if edit.denoise and has_audio:
+        through_audio(("audio.extract", {}), ("audio.denoise", {}))
     layers, extra = [], []
     if voice_handle and edit.voiceover:
         inputs["vo"] = voice_handle
@@ -210,6 +370,10 @@ def build_spec(
     ]
     if hits:
         add("video.sfx", {"hits": hits, "volume": 0.5})
+    if edit.loudnorm and (has_audio or layers or hits):
+        through_audio(("audio.extract", {}), ("audio.loudnorm", {"target_lufs": -14.0}))
+    if edit.fade_in or edit.fade_out:
+        add("video.fade", {"fade_in": edit.fade_in, "fade_out": edit.fade_out})
     add("export", {"preset": "web_h264"})
     steps[-1]["id"] = "out"
     return {"version": 1, "inputs": inputs, "steps": steps, "outputs": ["out"]}

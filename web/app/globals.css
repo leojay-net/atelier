@@ -163,6 +163,7 @@ dialog::backdrop {
   --ws-voice: #2f9a73;
   --ws-music: #8461c4;
   --ws-sfx: #c75c82;
+  --ws-sticker: #8a63d2;
   background: var(--color-bg);
   color: var(--color-fg);
 }
