@@ -14,13 +14,14 @@ This split is what lets Atelier use far fewer tokens than a general-purpose codi
 
 ## Status
 
-**Phases 0–1 done; Phases 2–4 (agent layer, video and audio, documents) and the headless application layer of Phase 5 built and tested offline; the web UI and the live eval gate are not yet done.** The engine and the image domain work end to end from the CLI:
-- 12 image ops, 11 presets, 2 recipes, 6 quality checks and 4 preview kinds
-- video and audio: `trim`, `reframe`, `concat`, `captions`, `soundtrack`, `mix`… fused into one encode, with loudness normalization
-- documents: fill Word/PowerPoint/Excel templates, tables, images, PDF merge/stamp/form/redact, print to PDF (LibreOffice)
-- each step runs in a sandboxed worker, and results are cached by content hash
+Built and deployed for the Vultr Agent Rush hackathon. Live demo: **https://209.250.229.110.sslip.io**. Judges: start with [`docs/17-submission.md`](docs/17-submission.md) (architecture, business case, rule-by-rule evidence, demo shot list).
 
-The agent layer (`atelier ask`) and its 40-task eval suite exist and are tested against a scripted model. **The token-savings thesis has not been measured yet**: that needs a live run and a baseline (see [`PROGRESS.md`](PROGRESS.md)). The plan is in [`docs/08-roadmap.md`](docs/08-roadmap.md).
+- **Prompt to finished piece:** video (with voice, music, captions, sound effects), animated characters, images, audio, Word/Excel/PowerPoint/PDF, through an AI director whose output is a small validated spec.
+- **A CapCut-style workspace** (`web/`): history, media, timeline with layers, filters, stickers, auto captions, fades and transitions, audio clean-up, undo/redo, and an AI assistant, all saving through the same spec pipeline.
+- **Runs on Vultr:** a Vultr VM (Docker Compose), Vultr Serverless Inference for every model call, optional Vultr Object Storage.
+- **Safe by construction:** the model never runs code; specs are validated and rendered by a deterministic engine; shell commands (eval baseline only) run in a throwaway no-network container.
+
+The original engine milestones and the token-savings plan are in [`docs/08-roadmap.md`](docs/08-roadmap.md); the CapCut gap list is [`docs/16-capcut-gap-analysis.md`](docs/16-capcut-gap-analysis.md).
 
 ```sh
 uv sync
