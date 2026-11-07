@@ -128,5 +128,18 @@ voice changer, a large sound and sticker library, templates. Decide these only a
 | Sticker glide (two-point keyframe) | Built (`video.overlay` `move_to`) |
 | More clips after the edit | Built as a join at the end; the preview plays only the first video. Not yet a free multi-clip timeline (no reordering or mixing clips) |
 | Beat grid and snap Split to beat | Built with a typed BPM; no automatic beat detection yet |
-| Green-screen removal | Engine op `video.chromakey` (colour key over a picture); no editor panel yet; no AI background removal |
-| Several overlay tracks, free keyframes (scale, opacity, rotation), masks, blend modes, voice changer, sticker/sound library | Not built |
+| Green-screen removal | Engine op `video.chromakey` (colour key over a picture); no editor panel yet |
+| Picture-in-picture video overlays, circle/rounded masks, overlay fades, blend modes (screen, multiply, overlay, add) | Built (stickers panel: add a picture or a video) |
+| Remove a sticker's background | Built (`POST /assets/{handle}/cutout`, uses the on-server U2-Net model); not for video |
+| Emoji stickers, 9 sound effects | Built (a small built-in set, not a large library) |
+| Voice changer (deep, high, robot, telephone, echo, whisper) | Built (`audio.voice_effect`); heard in the full preview and the saved version |
+| AI videos open with picture and sound already on separate layers | Built (`result.layers`, made after every finished video with sound); voice and music inside the sound are not separated |
+| Full preview (server draft of the whole edit) | Built, see section 6 |
+| Free keyframes (scale, rotation, opacity curves), per-part masks on video, several video tracks with their own timelines, automatic beat detection, background removal in video | Not built |
+
+## 6. Full preview
+
+Anything the browser cannot draw as you edit (backwards parts, crossfades, captions, noise
+clean-up, steadying, joined clips, voice effects) is shown by a quick server render of the
+whole edit (`POST /jobs/{id}/edit` with `draft: true`): not a chat version, not in the library,
+the newest two are kept.

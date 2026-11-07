@@ -68,6 +68,10 @@ class OverlayItem(BaseModel):
     start: float = Field(0.0, ge=0)
     end: float | None = Field(None, gt=0)
     move_to: Literal[*ANCHORS] | None = None  # glide to this spot by the end (needs `end`)
+    shape: Literal["rect", "circle", "rounded"] = "rect"
+    fade: float = Field(0.0, ge=0, le=5)  # fades in and out (needs `end`)
+    blend: Literal["normal", "screen", "multiply", "overlay", "addition"] = "normal"
+    sound: bool = False  # a video picture-in-picture keeps its own sound
 
 
 class AppendItem(BaseModel):
@@ -94,7 +98,7 @@ class TextItem(BaseModel):
 class SoundItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     at: float = Field(ge=0)
-    kind: Literal["whoosh", "pop", "riser", "impact"] = "whoosh"
+    kind: Literal["whoosh", "pop", "riser", "impact", "ding", "click", "laser", "boom", "sparkle"] = "whoosh"
 
 
 class VoiceItem(BaseModel):
@@ -104,6 +108,7 @@ class VoiceItem(BaseModel):
     voice: str = ""
     start: float = Field(0.0, ge=0)
     volume: float = Field(1.0, ge=0, le=3)
+    effect: Literal["deep", "high", "robot", "telephone", "echo", "whisper"] | None = None
 
 
 class MusicItem(BaseModel):
@@ -289,6 +294,8 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append("even loudness")
     if edit.stabilize:
         done.append("steadied")
+    if edit.voiceover and edit.voiceover.effect:
+        done.append(f"a {edit.voiceover.effect} voice")
     if edit.append:
         done.append(f"{len(edit.append)} more clip{'s' if len(edit.append) > 1 else ''} added")
     return "Edited by hand: " + (", ".join(done) or "no changes")
@@ -302,6 +309,7 @@ def build_spec(
     has_audio: bool = True,
     overlay_handles: list[str] | None = None,
     append_handles: list[str] | None = None,
+    overlay_media: list[str] | None = None,
 ) -> dict[str, Any]:
     """The engine spec for an edit of a video `duration` seconds long."""
     parts = kept_parts(edit, duration)
@@ -414,12 +422,24 @@ def build_spec(
         if start is None:
             continue
         inputs[f"ov{i}"] = (overlay_handles or [])[i]
+        is_video = i < len(overlay_media or []) and (overlay_media or [])[i] == "video"
         oargs: dict[str, Any] = {"anchor": ov.anchor, "scale": ov.scale,
                                  "opacity": ov.opacity, "start": round(start, 3)}  # fmt: skip
         if ov.end is not None and (end := clock(ov.end)) is not None and end > start:
             oargs["end"] = round(end, 3)
-            if ov.move_to:
-                oargs["move_to"] = ov.move_to
+            if not is_video:
+                if ov.move_to:
+                    oargs["move_to"] = ov.move_to
+                if ov.fade:
+                    oargs["fade"] = ov.fade
+        if is_video:
+            oargs["audio"] = "mix" if ov.sound else "main_only"
+            add("video.pip", oargs, [f"ov{i}"])
+            continue
+        if ov.shape != "rect":
+            oargs["shape"] = ov.shape
+        if ov.blend != "normal":
+            oargs["blend"] = ov.blend
         add("video.overlay", oargs, [f"ov{i}"])
     for item in edit.texts:
         start = clock(item.start)
@@ -445,7 +465,12 @@ def build_spec(
         inputs["vo"] = voice_handle
         layers.append({"kind": "voice", "start": round(clock(edit.voiceover.start) or 0.0, 3),
                        "volume": edit.voiceover.volume})  # fmt: skip
-        extra.append("vo")
+        if edit.voiceover.effect:
+            steps.append({"id": "voe", "op": "audio.voice_effect", "in": ["vo"],
+                          "args": {"effect": edit.voiceover.effect}})  # fmt: skip
+            extra.append("voe")
+        else:
+            extra.append("vo")
     if music_handle and edit.music:
         inputs["mu"] = music_handle
         layers.append({"kind": "music", "start": 0.0, "volume": edit.music.volume,

@@ -320,11 +320,22 @@ class OverlayParams(Params):
         None,
         description="glide to this anchor between start and end (a keyframe: needs a time range)",
     )
+    shape: Literal["rect", "circle", "rounded"] = Field(
+        "rect", description="cut the picture to a circle or rounded corners"
+    )
+    fade: Timecode = Field(
+        0.0, ge=0, le=5, description="seconds it fades in at start and out at end (needs an end)"
+    )
+    blend: Literal["normal", "screen", "multiply", "overlay", "addition"] = Field(
+        "normal", description="how it mixes with the picture (screen for light leaks, multiply…)"
+    )
 
     @model_validator(mode="after")
     def _ordered(self) -> OverlayParams:
         if self.move_to is not None and self.end is None:
             raise ValueError("move_to needs an end time: the glide lasts from start to end")
+        if self.fade > 0 and self.end is None:
+            raise ValueError("fade needs an end time: it fades out there")
         if self.end is not None and self.end <= self.start:
             raise ValueError(f"end ({self.end:g}s) must be after start ({self.start:g}s)")
         return self
@@ -379,10 +390,38 @@ def overlay(g: Graph, p: OverlayParams) -> None:
     y = round(fy * (g.height - oh - 2 * margin)) + margin
     if g.height > g.width:  # vertical: stay clear of the Reels / TikTok / Shorts UI zones
         x, y = _inside_social_safe_area(x, y, ow, oh, g.width, g.height)
+    blended = p.blend != "normal"
+    if blended:  # the picture covers the whole frame and mixes with it
+        ow, oh, x, y = g.width, g.height, 0, 0
     (img,) = g.add("scale", {"w": ow, "h": oh, "flags": "lanczos"}, ins=[g.extra_label(0)])
-    if p.opacity < 1:
+    if p.shape != "rect":
+        (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
+        radius = "min(W,H)/2" if p.shape == "circle" else "min(W,H)*0.2"
+        inside = (
+            f"lte(hypot(max(abs(X-W/2)-(W/2-{radius}),0),max(abs(Y-H/2)-(H/2-{radius}),0)),{radius})"
+        )
+        (img,) = g.add(
+            "geq",
+            {"r": "r(X,Y)", "g": "g(X,Y)", "b": "b(X,Y)", "a": f"if({inside},alpha(X,Y),0)"},
+            ins=[img],
+        )
+    if p.opacity < 1 and not blended:
         (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
         (img,) = g.add("colorchannelmixer", {"aa": p.opacity}, ins=[img])
+    if p.fade > 0 and p.end is not None and g.duration is not None:
+        # a still picture is one frame: repeat it for the length of the video so it can fade
+        fps = g.fps or 30.0
+        (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
+        (img,) = g.add("loop", {"loop": -1, "size": 1, "start": 0}, ins=[img])
+        (img,) = g.add("setpts", {"expr": f"N/({num(fps)}*TB)"}, ins=[img])
+        (img,) = g.add("trim", {"end": num(g.duration)}, ins=[img])
+        fd = min(p.fade, (p.end - p.start) / 2)
+        (img,) = g.add(
+            "fade", {"t": "in", "st": num(p.start), "d": num(fd), "alpha": 1}, ins=[img]
+        )
+        (img,) = g.add(
+            "fade", {"t": "out", "st": num(p.end - fd), "d": num(fd), "alpha": 1}, ins=[img]
+        )
     args: dict[str, Any] = {"x": x, "y": y}
     if p.move_to is not None and p.end is not None:
         tx, ty = _ANCHOR[p.move_to]
@@ -396,7 +435,15 @@ def overlay(g: Graph, p: OverlayParams) -> None:
         )
         args["enable"] = window
     assert g.video is not None
-    (g.video,) = g.add("overlay", args, ins=[g.video, img], prefix="v")
+    if blended:
+        mode = {"overlay": "overlay", "screen": "screen", "multiply": "multiply", "addition": "addition"}[p.blend]
+        bargs: dict[str, Any] = {"all_mode": mode, "all_opacity": p.opacity}
+        if "enable" in args:
+            bargs["enable"] = args["enable"]
+        (img,) = g.add("format", {"pix_fmts": "yuva420p"}, ins=[img])
+        (g.video,) = g.add("blend", bargs, ins=[g.video, img], prefix="v")
+    else:
+        (g.video,) = g.add("overlay", args, ins=[g.video, img], prefix="v")
     boxes = g.notes.setdefault("boxes", [])
     boxes.append(
         {

@@ -337,3 +337,44 @@ def mix(g: Graph, p: MixParams) -> None:
     g.sample_rate, g.channels = 48000, 2
     if total is not None:
         g.duration = total
+
+
+# -- voice effects (a voice changer) -----------------------------------------------------------
+
+VOICE_EFFECTS = ("deep", "high", "robot", "telephone", "echo", "whisper")
+
+
+class VoiceEffectParams(Params):
+    effect: Literal["deep", "high", "robot", "telephone", "echo", "whisper"] = Field(
+        description="deep | high (chipmunk) | robot | telephone | echo | whisper"
+    )
+
+
+@audio_op(
+    name="audio.voice_effect",
+    version="1.0.0",
+    params=VoiceEffectParams,
+    description="change how a voice sounds: deep, high, robot, telephone, echo, whisper",
+)
+def voice_effect(g: Graph, p: VoiceEffectParams) -> None:
+    """A voice changer made of plain filters. `deep` and `high` shift the pitch without
+    changing the speed; `robot` rings the voice; `telephone` keeps only the middle of the sound;
+    `echo` repeats it; `whisper` thins it to breath."""
+    rate = g.sample_rate or 48000
+    if p.effect in ("deep", "high"):
+        factor = 0.8 if p.effect == "deep" else 1.3
+        g.af("asetrate", {"sample_rate": round(rate * factor)})
+        g.af("aresample", {"osr": rate})
+        g.af("atempo", {"tempo": round(1 / factor, 4)})
+    elif p.effect == "robot":
+        g.af("tremolo", {"f": 70, "d": 0.95})
+        g.af("aecho", {"in_gain": 0.8, "out_gain": 0.8, "delays": 12, "decays": 0.5})
+    elif p.effect == "telephone":
+        g.af("highpass", {"f": 450})
+        g.af("lowpass", {"f": 3200})
+        g.af("volume", {"volume": 1.4})
+    elif p.effect == "echo":
+        g.af("aecho", {"in_gain": 0.8, "out_gain": 0.88, "delays": "180|320", "decays": "0.45|0.3"})
+    else:  # whisper
+        g.af("highpass", {"f": 1800})
+        g.af("volume", {"volume": 1.6})

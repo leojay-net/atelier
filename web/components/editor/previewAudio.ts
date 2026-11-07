@@ -9,7 +9,7 @@
  */
 
 export type Clock = (t: number) => number | null;
-export type SoundKind = "whoosh" | "pop" | "riser" | "impact";
+export type SoundKind = "whoosh" | "pop" | "riser" | "impact" | "ding" | "click" | "laser" | "boom" | "sparkle";
 export interface Layer {
   handle: string;
   start: number; // edited clock
@@ -22,7 +22,7 @@ export interface Hit {
 }
 
 // where each effect peaks, seconds into it (the server's video.sfx places them the same way)
-const PEAK: Record<SoundKind, number> = { whoosh: 0.35, pop: 0, riser: 1.2, impact: 0 };
+const PEAK: Record<SoundKind, number> = { whoosh: 0.35, pop: 0, riser: 1.2, impact: 0, ding: 0, click: 0, laser: 0, boom: 0, sparkle: 0 };
 
 export class PreviewAudio {
   private ctx: AudioContext;
@@ -103,7 +103,7 @@ export class PreviewAudio {
     const cached = this.effects.get(kind);
     if (cached) return cached;
     const sr = this.ctx.sampleRate;
-    const seconds = { whoosh: 0.55, pop: 0.12, riser: 1.25, impact: 0.7 }[kind];
+    const seconds = { whoosh: 0.55, pop: 0.12, riser: 1.25, impact: 0.7, ding: 0.9, click: 0.05, laser: 0.3, boom: 1.0, sparkle: 0.5 }[kind];
     const buf = this.ctx.createBuffer(1, Math.ceil(seconds * sr), sr);
     const x = buf.getChannelData(0);
     let b0 = 0;
@@ -123,6 +123,16 @@ export class PreviewAudio {
       } else if (kind === "riser") {
         const env = t < 1.1 ? Math.pow(t / 1.1, 3) : Math.max(0, 1 - (t - 1.15) / 0.1);
         x[i] = 0.35 * Math.sin(2 * Math.PI * t * (180 + 520 * t)) * env;
+      } else if (kind === "ding") {
+        x[i] = 0.5 * (Math.sin(2 * Math.PI * 1320 * t) + 0.5 * Math.sin(2 * Math.PI * 1980 * t)) * Math.exp(-5 * t);
+      } else if (kind === "click") {
+        x[i] = 0.7 * Math.sin(2 * Math.PI * 2500 * t) * Math.exp(-150 * t);
+      } else if (kind === "laser") {
+        x[i] = 0.5 * Math.sin(2 * Math.PI * t * (1800 - 9000 * t)) * Math.exp(-6 * t);
+      } else if (kind === "boom") {
+        x[i] = 0.9 * Math.sin(2 * Math.PI * 40 * t * Math.exp(-3 * t)) * Math.exp(-3 * t);
+      } else if (kind === "sparkle") {
+        x[i] = 0.4 * (Math.sin(2 * Math.PI * 2400 * t) + Math.sin(2 * Math.PI * 3200 * t * (1 + t))) * Math.exp(-8 * t);
       } else {
         x[i] = 0.9 * Math.sin(2 * Math.PI * 55 * t) * Math.exp(-6 * t);
       }

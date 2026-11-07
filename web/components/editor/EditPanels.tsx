@@ -27,6 +27,7 @@ const ANCHORS: Anchor[] = [
 ];
 
 const del = "text-fg-tertiary hover:text-status-failed";
+const EMOJI = ["😀", "😂", "😍", "😎", "🔥", "❤️", "👍", "🎉", "✨", "⭐", "💯", "🎂", "🎁", "🌈", "👑", "🚀", "💥", "👏", "😱", "🤔", "🙌", "🎵", "📍", "✅"];
 
 /** The hidden picker behind "Or use a recording" and "My song". */
 export function EditFileInput({ edit }: { edit: Edit }) {
@@ -288,6 +289,22 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
                 start here
               </button>
             </div>
+            <label className="flex items-center justify-between gap-2 text-[12px]">
+              <span>Voice changer</span>
+              <select
+                className={field}
+                value={voice.effect}
+                onChange={(e) => setVoice({ ...voice, effect: e.target.value as typeof voice.effect })}
+              >
+                <option value="">Natural</option>
+                {(["deep", "high", "robot", "telephone", "echo", "whisper"] as const).map((v) => (
+                  <option key={v} value={v}>
+                    {v[0]!.toUpperCase() + v.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {voice.effect ? <p className="text-[12px] text-fg-tertiary">Heard in the full preview and when you save.</p> : null}
             <Slider
               label={`Voice volume ${Math.round(voice.volume * 100)}%`}
               value={voice.volume}
@@ -686,17 +703,45 @@ export function StickersPanel({ edit }: { edit: Edit }) {
   return (
     <div className="space-y-3">
       <Btn onClick={() => edit.pickFile("sticker")}>
-        <ImagePlus size={13} /> Add a picture
+        <ImagePlus size={13} /> Add a picture or video
       </Btn>
+      <div className="grid grid-cols-8 gap-1" role="group" aria-label="Emoji stickers">
+        {EMOJI.map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-label={`Add ${m}`}
+            onClick={() => edit.addEmoji(m)}
+            className="grid h-8 place-items-center rounded-md text-[18px] hover:bg-bg-inset"
+          >
+            {m}
+          </button>
+        ))}
+      </div>
       {!overlays.length ? (
         <p className="text-fg-tertiary">A logo, a sticker or a photo in the corner (PNG with a clear background works best).</p>
       ) : null}
       {overlays.map((o) => (
         <div key={o.id} className="space-y-2 rounded-lg border border-border bg-bg-subtle p-2.5">
           <div className="flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL */}
-            <img src={`/api/proxy/assets/${encodeURIComponent(o.handle)}/content`} alt="" className="h-9 w-9 rounded bg-bg-inset object-contain" />
+            {o.video ? (
+              <video src={`/api/proxy/assets/${encodeURIComponent(o.handle)}/content`} muted className="h-9 w-9 rounded bg-bg-inset object-cover" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL
+              <img src={`/api/proxy/assets/${encodeURIComponent(o.handle)}/content`} alt="" className="h-9 w-9 rounded bg-bg-inset object-contain" />
+            )}
             <span className="min-w-0 flex-1 truncate">{o.name || "Picture"}</span>
+            {!o.video ? (
+              <button
+                type="button"
+                disabled={edit.cutting !== null}
+                onClick={() => void edit.cutOut(o.id)}
+                className="inline-flex items-center gap-1 text-[12px] text-accent hover:underline disabled:opacity-50"
+              >
+                {edit.cutting === o.id ? <Loader2 size={12} className="animate-spin" /> : null}
+                {edit.cutting === o.id ? "Working…" : "Remove background"}
+              </button>
+            ) : null}
             <button type="button" aria-label="Remove picture" onClick={() => setOverlays(overlays.filter((x) => x.id !== o.id))} className={del}>
               <Trash2 size={13} />
             </button>
@@ -714,6 +759,42 @@ export function StickersPanel({ edit }: { edit: Edit }) {
           </div>
           <Slider label={`Size ${Math.round(o.scale * 100)}%`} value={o.scale} min={0.05} max={1} step={0.01} onChange={(v) => patch(o.id, { scale: v })} />
           <Slider label={`Opacity ${Math.round(o.opacity * 100)}%`} value={o.opacity} min={0.1} max={1} step={0.05} onChange={(v) => patch(o.id, { opacity: v })} />
+          <div className="grid grid-cols-2 gap-2 text-[12px]">
+            <label className="flex flex-col gap-1">
+              Shape
+              <select className={field} value={o.shape ?? "rect"} disabled={o.video} onChange={(e) => patch(o.id, { shape: e.target.value as "rect" | "circle" | "rounded" })}>
+                <option value="rect">Square</option>
+                <option value="rounded">Rounded</option>
+                <option value="circle">Circle</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              Mix
+              <select className={field} value={o.blend ?? "normal"} disabled={o.video} onChange={(e) => patch(o.id, { blend: e.target.value as NonNullable<typeof o.blend> })}>
+                <option value="normal">Normal</option>
+                <option value="screen">Screen (glow)</option>
+                <option value="multiply">Multiply (dark)</option>
+                <option value="overlay">Overlay</option>
+                <option value="addition">Add (bright)</option>
+              </select>
+            </label>
+          </div>
+          {o.blend && o.blend !== "normal" ? <p className="text-[12px] text-fg-tertiary">A mixed picture covers the whole frame.</p> : null}
+          {o.video ? (
+            <label className="flex items-center gap-2 text-[12px]">
+              <input type="checkbox" checked={Boolean(o.sound)} onChange={(e) => patch(o.id, { sound: e.target.checked })} />
+              Keep this video&apos;s sound
+            </label>
+          ) : (
+            <Slider
+              label={`Fade in and out ${(o.fade ?? 0).toFixed(1)}s`}
+              value={o.fade ?? 0}
+              min={0}
+              max={2}
+              step={0.1}
+              onChange={(v) => patch(o.id, { fade: v })}
+            />
+          )}
           <label className="flex items-center justify-between gap-2 text-[12px]">
             <span>Glide to</span>
             <select

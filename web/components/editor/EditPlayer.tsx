@@ -144,21 +144,25 @@ export function EditPlayer({ edit }: { edit: Edit }) {
           const k = o.moveTo && o.end !== null ? Math.max(0, Math.min(1, (now - o.start) / Math.max(0.01, o.end - o.start))) : 0;
           const fx = x0 + (x1 - x0) * k;
           const fy = y0 + (y1 - y0) * k;
-          return (
+          const fadeK =
+            o.fade && o.end !== null
+              ? Math.max(0, Math.min(1, (now - o.start) / o.fade, (o.end - now) / o.fade))
+              : 1;
+          const style: React.CSSProperties = {
+            width: `${(o.blend && o.blend !== "normal" ? 1 : o.scale) * 100}%`,
+            opacity: o.opacity * fadeK,
+            left: `calc(${fx * 100}% + ${(1 - 2 * fx) * 4}%)`,
+            top: `calc(${fy * 100}% + ${(1 - 2 * fy) * 4}%)`,
+            transform: `translate(${-fx * 100}%, ${-fy * 100}%)`,
+            borderRadius: o.shape === "circle" ? "50%" : o.shape === "rounded" ? "20%" : undefined,
+            mixBlendMode: o.blend && o.blend !== "normal" ? (o.blend === "addition" ? "plus-lighter" : o.blend) : undefined,
+            ...(o.blend && o.blend !== "normal" ? { left: 0, top: 0, transform: "none", height: "100%", objectFit: "cover" as const } : {}),
+          };
+          return o.video ? (
+            <video key={o.id} src={contentUrl(o.handle)} muted loop autoPlay playsInline className="pointer-events-none absolute" style={style} />
+          ) : (
             // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL
-            <img
-              key={o.id}
-              src={contentUrl(o.handle)}
-              alt=""
-              className="pointer-events-none absolute"
-              style={{
-                width: `${o.scale * 100}%`,
-                opacity: o.opacity,
-                left: `calc(${fx * 100}% + ${(1 - 2 * fx) * 4}%)`,
-                top: `calc(${fy * 100}% + ${(1 - 2 * fy) * 4}%)`,
-                transform: `translate(${-fx * 100}%, ${-fy * 100}%)`,
-              }}
-            />
+            <img key={o.id} src={contentUrl(o.handle)} alt="" className="pointer-events-none absolute" style={style} />
           );
         })}
         {shown.map((t) => (

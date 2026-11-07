@@ -18,8 +18,17 @@ from atelier.ops.registry import OpError, Params
 from atelier.spec.types import Fraction, Timecode
 
 SAMPLE_RATE = 48000
-Kind = Literal["whoosh", "pop", "riser", "impact"]
-PEAK = {"whoosh": 0.35, "pop": 0.0, "riser": 1.2, "impact": 0.0}  # seconds into the sound
+Kind = Literal["whoosh", "pop", "riser", "impact", "ding", "click", "laser", "boom", "sparkle"]
+PEAK = {"whoosh": 0.35, "pop": 0.0, "riser": 1.2, "impact": 0.0, "ding": 0.0, "click": 0.0,
+        "laser": 0.0, "boom": 0.0, "sparkle": 0.0}  # fmt: skip  # seconds into the sound
+# the tones: (expression of t, seconds)
+TONES = {
+    "ding": ("0.5*(sin(2*PI*1320*t)+0.5*sin(2*PI*1980*t))*exp(-5*t)", "0.9"),
+    "click": ("0.7*sin(2*PI*2500*t)*exp(-150*t)", "0.05"),
+    "laser": ("0.5*sin(2*PI*t*(1800-9000*t))*exp(-6*t)", "0.3"),
+    "boom": ("0.9*sin(2*PI*40*t*exp(-3*t))*exp(-3*t)", "1.0"),
+    "sparkle": ("0.4*(sin(2*PI*2400*t)+sin(2*PI*3200*t*(1+t)))*exp(-8*t)", "0.5"),
+}
 
 
 class Hit(BaseModel):
@@ -32,7 +41,7 @@ class Hit(BaseModel):
     )
     kind: Kind = Field(
         "whoosh",
-        description="whoosh | pop | riser | impact",
+        description="whoosh | pop | riser | impact | ding | click | laser | boom | sparkle",
         validation_alias=AliasChoices("kind", "sound", "type", "effect"),
     )
 
@@ -69,6 +78,9 @@ def _sound(g: Graph, kind: str, seed: int) -> str:
         )  # fmt: skip
         (a,) = g.add("afade", {"t": "in", "st": 0, "d": "1.1", "curve": "exp"}, ins=[a], prefix="a")
         (a,) = g.add("afade", {"t": "out", "st": "1.15", "d": "0.1"}, ins=[a], prefix="a")
+    elif kind in TONES:
+        expr, seconds = TONES[kind]
+        (a,) = g.add("aevalsrc", {"exprs": expr, "d": seconds, "s": SAMPLE_RATE}, ins=[], prefix="a")
     else:  # impact
         (a,) = g.add(
             "aevalsrc",

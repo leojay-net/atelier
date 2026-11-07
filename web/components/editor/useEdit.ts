@@ -58,18 +58,24 @@ export type Overlay = {
   start: number;
   end: number | null;
   moveTo?: Anchor | null;
+  shape?: "rect" | "circle" | "rounded";
+  fade?: number;
+  blend?: "normal" | "screen" | "multiply" | "overlay" | "addition";
+  /** A video picture-in-picture instead of a still picture. */
+  video?: boolean;
+  sound?: boolean;
 };
 export const TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright", "circlecrop", "fadeblack", "fadewhite"] as const;
 export type Transition = (typeof TRANSITIONS)[number];
 export const TRANSITION_SECONDS = 0.5;
 export type TextItemExtra = { color?: string; animate?: "auto" | "none" | "rise" | "pop" };
-export type Sound = { id: number; at: number; kind: "whoosh" | "pop" | "riser" | "impact" };
+export type Sound = { id: number; at: number; kind: "whoosh" | "pop" | "riser" | "impact" | "ding" | "click" | "laser" | "boom" | "sparkle" };
 
 /** The layers (tracks) you can mute or delete one by one. */
 export type Layer = "video" | "text" | "stickers" | "effects" | "voice" | "music";
 const UNMUTED: Record<Layer, boolean> = { video: false, text: false, stickers: false, effects: false, voice: false, music: false };
 
-export const SOUNDS: Sound["kind"][] = ["whoosh", "pop", "riser", "impact"];
+export const SOUNDS: Sound["kind"][] = ["whoosh", "pop", "riser", "impact", "ding", "click", "laser", "boom", "sparkle"];
 export const RATIO: Record<Exclude<Shape, "original">, number> = {
   portrait: 9 / 16,
   square: 1,
@@ -98,6 +104,7 @@ const VOICE0 = {
   seconds: 0,
   start: 0,
   volume: 1,
+  effect: "" as "" | "deep" | "high" | "robot" | "telephone" | "echo" | "whisper",
 };
 const MUSIC0 = {
   ai: false,
@@ -156,6 +163,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [loudnorm, setLoudnorm] = useState(false);
   const [stabilize, setStabilize] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
+  const [cutting, setCutting] = useState<number | null>(null);
   const [bpm, setBpm] = useState(0);
   const [snap, setSnap] = useState(false);
   const [making, setMaking] = useState<"" | "voice" | "music">("");
@@ -226,7 +234,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     } else if (uploadFor === "sticker")
       setOverlays((cur) => [
         ...cur,
-        { id: nextId++, handle, name, anchor: "top_right", scale: 0.25, opacity: 1, start: 0, end: null },
+        { id: nextId++, handle, name, anchor: "top_right", scale: 0.25, opacity: 1, start: 0, end: null, video: done.asset?.media === "video" },
       ]);
     else if (uploadFor === "voice") setVoice((v) => ({ ...v, on: true, ai: false, handle, name, text: "" }));
     else setMusic((m) => ({ ...m, on: true, ai: false, mode: "upload", handle, name }));
@@ -587,6 +595,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
               voice: voice.voice,
               start: voice.start,
               volume: voice.volume,
+              ...(voice.effect ? { effect: voice.effect } : {}),
             }
           : null,
       music:
@@ -612,6 +621,10 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
         start: o.start,
         ...(o.end !== null ? { end: o.end } : {}),
         ...(o.end !== null && o.moveTo ? { move_to: o.moveTo } : {}),
+        ...(o.shape && o.shape !== "rect" ? { shape: o.shape } : {}),
+        ...(o.end !== null && o.fade ? { fade: o.fade } : {}),
+        ...(o.blend && o.blend !== "normal" ? { blend: o.blend } : {}),
+        ...(o.sound ? { sound: true } : {}),
       })),
       append: clips.map((c) => ({
         handle: c.handle,
@@ -703,6 +716,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     loudnorm ||
     stabilize ||
     clips.length > 0 ||
+    (voice.on && Boolean(voice.effect)) ||
+    overlays.some((o) => o.video) ||
     kept.some((p) => p.reverse || (p.hold ?? 0) > 0) ||
     (transition !== null && kept.length > 1) ||
     overlays.some((o) => o.moveTo && o.end !== null);
@@ -787,10 +802,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       bump((n) => n + 1);
     }
   }
-  /* eslint-disable react-hooks/refs -- the history lives in a ref; `bump` re-renders when it moves */
   const canUndo = history.current.at > 0 || history.current.stack[history.current.at] !== sig;
   const canRedo = history.current.at < history.current.stack.length - 1;
-  /* eslint-enable react-hooks/refs */
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -825,6 +838,46 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     fileInput.current = el;
   }, []);
 
+  /** An emoji as a picture (drawn on a canvas, then added like any uploaded sticker). */
+  function addEmoji(emoji: string) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 256;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.font = "200px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(emoji, 128, 140);
+    c.toBlob((b) => {
+      if (!b) return;
+      setUploadFor("sticker");
+      upload([new File([b], `emoji-${emoji.codePointAt(0)?.toString(16) ?? "x"}.png`, { type: "image/png" })]);
+    }, "image/png");
+  }
+  /** Replace a sticker by the same picture with its background cut out. */
+  async function cutOut(id: number) {
+    const o = overlays.find((x) => x.id === id);
+    if (!o || o.video) return;
+    setCutting(id);
+    setError("");
+    try {
+      const r = await fetch(`/api/proxy/assets/${encodeURIComponent(o.handle)}/cutout`, { method: "POST" });
+      if (!r.ok) throw new Error((await readApiError(r)).message);
+      let job: Job = await r.json();
+      for (let i = 0; i < 60 && !isTerminal(job.status); i++) {
+        await new Promise((ok) => setTimeout(ok, 1500));
+        const g = await fetch(`/api/proxy/jobs/${job.id}`);
+        if (g.ok) job = await g.json();
+      }
+      const out = job.result?.outputs ? Object.values(job.result.outputs)[0] : undefined;
+      if (job.status !== "succeeded" || !out) throw new Error(job.error || "The background could not be removed.");
+      setOverlays((cur) => cur.map((x) => (x.id === id ? { ...x, handle: out.handle } : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The background could not be removed.");
+    } finally {
+      setCutting(null);
+    }
+  }
   function pickFile(for_: "voice" | "music" | "sticker" | "clip") {
     setUploadFor(for_);
     fileInput.current?.click();
@@ -920,6 +973,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     makingOnSave,
     save,
     splitLayers,
+    addEmoji,
+    cutOut,
+    cutting,
     draft,
     showDraft: showDraft && draft.phase === "ready",
     setShowDraft,
