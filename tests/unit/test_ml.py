@@ -388,3 +388,24 @@ def test_the_auto_captioned_recipe_needs_no_caption_file(engine: Engine, tmp_pat
     meta = next(iter(result.outputs.values())).meta
     assert (meta["video"]["display"] == [1080, 1920]) and meta["boxes"]
     assert result.spec.origin == {"recipe": "auto_captioned_reel", "version": 1}
+
+
+@needs_u2net
+def test_video_background_can_be_replaced(tmp_path: Path) -> None:
+    from atelier.engine.engine import Engine
+
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(FIXTURES / "av" / "clip_landscape.mp4").handle
+    spec = {
+        "version": 1,
+        "inputs": {"v": clip},
+        "steps": [
+            {"id": "m", "op": "video.trim", "in": ["v"], "args": {"start": 0, "end": 1.5}},
+            {"id": "b", "op": "video.remove_background", "in": ["m"], "args": {"background": "blur"}},
+            {"id": "out", "op": "export", "in": ["b"], "args": {"preset": "web_h264"}},
+        ],
+        "outputs": ["out"],
+    }
+    result = engine.run(spec)
+    assert result.passed
+    assert result.outputs["out"].media == "video"

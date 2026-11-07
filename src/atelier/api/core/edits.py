@@ -74,6 +74,23 @@ class OverlayItem(BaseModel):
     sound: bool = False  # a video picture-in-picture keeps its own sound
 
 
+class BackgroundItem(BaseModel):
+    """Take the background out of the video (clips up to 30 s) and put a colour or a blur there."""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["blur", "color"] = "blur"
+    color: str = Field("#00b140", pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class GreenScreenItem(BaseModel):
+    """The video was filmed against a green screen: swap it for a picture."""
+
+    model_config = ConfigDict(extra="forbid")
+    handle: str  # the new background picture
+    color: str = Field("#00ff00", pattern=r"^#[0-9a-fA-F]{6}$")
+    similarity: float = Field(0.3, gt=0, le=1)
+
+
 class AppendItem(BaseModel):
     """Another video (or part of one) played after the edited one."""
 
@@ -141,6 +158,8 @@ class EditIn(BaseModel):
     captions: CaptionsItem | None = None
     overlays: list[OverlayItem] = Field(default_factory=list, max_length=20)
     append: list[AppendItem] = Field(default_factory=list, max_length=8)
+    background: BackgroundItem | None = None
+    green_screen: GreenScreenItem | None = None
     denoise: bool = False  # reduce noise in the video's own sound
     loudnorm: bool = False  # even out the final loudness (-14 LUFS)
     stabilize: bool = False
@@ -294,6 +313,10 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append("even loudness")
     if edit.stabilize:
         done.append("steadied")
+    if edit.background:
+        done.append("a new background")
+    if edit.green_screen:
+        done.append("green screen swapped")
     if edit.voiceover and edit.voiceover.effect:
         done.append(f"a {edit.voiceover.effect} voice")
     if edit.append:
@@ -310,6 +333,7 @@ def build_spec(
     overlay_handles: list[str] | None = None,
     append_handles: list[str] | None = None,
     overlay_media: list[str] | None = None,
+    green_handle: str | None = None,
 ) -> dict[str, Any]:
     """The engine spec for an edit of a video `duration` seconds long."""
     parts = kept_parts(edit, duration)
@@ -386,6 +410,13 @@ def build_spec(
         add("video.speed", {"factor": edit.speed})
     if edit.stabilize:
         add("video.stabilize", {})
+    if edit.background:
+        add("video.remove_background",
+            {"background": edit.background.mode, "color": edit.background.color})  # fmt: skip
+    if edit.green_screen and green_handle:
+        inputs["gs"] = green_handle
+        add("video.chromakey", {"color": edit.green_screen.color,
+                                "similarity": edit.green_screen.similarity}, ["gs"])  # fmt: skip
     if edit.shape != "original":
         add(
             "video.reframe",

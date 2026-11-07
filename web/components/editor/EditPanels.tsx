@@ -205,6 +205,10 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
             BPM
           </span>
         </label>
+        <Btn onClick={() => void edit.findBeats()} disabled={edit.finding}>
+          {edit.finding ? <Loader2 size={13} className="animate-spin" /> : <Music size={13} />}
+          {edit.finding ? "Listening…" : "Find the beat for me"}
+        </Btn>
         <label className="flex items-center gap-2 text-[12px]">
           <input type="checkbox" checked={edit.snap} disabled={!edit.bpm} onChange={(e) => edit.setSnap(e.target.checked)} />
           Snap Split to the beat
@@ -633,6 +637,65 @@ function FadesAndMore({ edit }: { edit: Edit }) {
       {transition && kept.length < 2 ? (
         <p className="text-[12px] text-fg-tertiary">Split the video first: a transition sits between two parts.</p>
       ) : null}
+      <p className="pt-1 font-medium">Background</p>
+      <select
+        aria-label="Background"
+        className={field}
+        value={edit.background ? edit.background.mode : ""}
+        onChange={(e) =>
+          edit.setBackground(e.target.value ? { mode: e.target.value as "blur" | "color", color: edit.background?.color ?? "#00b140" } : null)
+        }
+      >
+        <option value="">Keep the background</option>
+        <option value="blur">Blur the background</option>
+        <option value="color">Replace it with a colour</option>
+      </select>
+      {edit.background?.mode === "color" ? (
+        <label className="flex items-center gap-2 text-[12px]">
+          Colour
+          <input
+            type="color"
+            value={edit.background.color}
+            onChange={(e) => edit.setBackground({ mode: "color", color: e.target.value })}
+            className="h-7 w-10 rounded border border-border bg-transparent"
+          />
+        </label>
+      ) : null}
+      {edit.background ? (
+        <p className="text-[12px] text-fg-tertiary">Finds the person or subject in every frame. Clips up to 30 seconds; shown in the full preview.</p>
+      ) : null}
+      <p className="pt-1 font-medium">Green screen</p>
+      {edit.green ? (
+        <div className="space-y-2 rounded-lg border border-border bg-bg-subtle p-2">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">New background: {edit.green.name}</span>
+            <button type="button" aria-label="Remove green screen" className={del} onClick={() => edit.setGreen(null)}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <label className="flex items-center gap-2 text-[12px]">
+            Screen colour
+            <input
+              type="color"
+              value={edit.green.color}
+              onChange={(e) => edit.setGreen({ ...edit.green!, color: e.target.value })}
+              className="h-7 w-10 rounded border border-border bg-transparent"
+            />
+          </label>
+          <Slider
+            label={`How much to remove ${Math.round(edit.green.similarity * 100)}%`}
+            value={edit.green.similarity}
+            min={0.05}
+            max={0.8}
+            step={0.05}
+            onChange={(v) => edit.setGreen({ ...edit.green!, similarity: v })}
+          />
+        </div>
+      ) : (
+        <Btn onClick={() => edit.pickFile("green")}>
+          <ImagePlus size={13} /> Swap a green screen for a picture
+        </Btn>
+      )}
       <p className="pt-1 font-medium">Footage</p>
       <label className="flex items-start gap-2">
         <input type="checkbox" checked={edit.stabilize} onChange={(e) => edit.setStabilize(e.target.checked)} className="mt-0.5" />

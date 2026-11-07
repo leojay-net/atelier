@@ -57,7 +57,10 @@ const ZOOMS = [1, 2, 4, 8];
  * tracks per layer, each of which can be muted, hidden or removed on its own. */
 export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) {
   const { duration, now, kept, parts, texts, voice, music, sounds, overlays, captions, clips, bpm } = edit;
-  const beats = bpm > 0 && duration ? Array.from({ length: Math.min(400, Math.floor(duration / (60 / bpm))) + 1 }, (_, i) => i * (60 / bpm)) : [];
+  const beats =
+    bpm > 0 && duration
+      ? Array.from({ length: Math.min(400, Math.floor((duration - edit.beatOffset) / (60 / bpm)) + 1) }, (_, i) => edit.beatOffset + i * (60 / bpm))
+      : [];
   const pct = (t: number) => (duration ? `${(t / duration) * 100}%` : "0%");
   const dragging = useRef(false);
   const scroller = useRef<HTMLDivElement>(null);
