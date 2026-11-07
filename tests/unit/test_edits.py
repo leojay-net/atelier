@@ -550,3 +550,17 @@ def test_green_screen_and_background_steps(tmp_path: Path) -> None:
     only_key = EditIn(source=clip, green_screen={"handle": photo})
     out = engine.store.path(engine.run(build_spec(only_key, 4.0, green_handle=photo)).outputs["out"].hash)
     assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+
+
+def test_the_beats_of_a_click_track_come_back_as_json(tmp_path: Path) -> None:
+    track = tmp_path / "beat.wav"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+         "aevalsrc=0.8*sin(2*PI*1000*t)*lt(mod(t\\,0.5)\\,0.04):s=44100:d=10", str(track)],
+        check=True,
+    )  # fmt: skip
+    _, api = make_org("acme")
+    handle = api.upload("beat.wav", track.read_bytes()).json()["handle"]
+    res = api.get(f"/assets/{handle}/beats")
+    assert res.status_code == 200, res.content
+    assert res.json()["bpm"] == pytest.approx(120, abs=2)

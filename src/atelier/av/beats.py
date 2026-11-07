@@ -72,5 +72,5 @@ def analyse(pcm: np.ndarray) -> dict[str, float | list[float]]:
     phase = max(np.arange(0, pf, 0.25), key=score)
     offset = phase / per_second
     duration = len(pcm) / RATE
-    beats = [round(offset + i * period, 3) for i in range(int((duration - offset) / period) + 1)]
-    return {"bpm": round(bpm, 1), "offset": round(offset, 3), "beats": beats}
+    beats = [round(float(offset + i * period), 3) for i in range(int((duration - offset) / period) + 1)]
+    return {"bpm": round(float(bpm), 1), "offset": round(float(offset), 3), "beats": [float(b) for b in beats]}
