@@ -730,7 +730,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       loudnorm,
       stabilize,
       ...(background ? { background } : {}),
-      ...(mask ? { mask: { ...mask, ...(mask.shape === "polygon" ? {} : { points: undefined }) } } : {}),
+      ...(mask && (mask.shape !== "polygon" || (mask.points?.length ?? 0) >= 3)
+        ? { mask: { ...mask, ...(mask.shape === "polygon" ? {} : { points: undefined }) } }
+        : {}),
       ...(zoom ? { zoom } : {}),
       ...(clips.length > 0 && mainAt > 0 ? { main_at: Math.min(mainAt, clips.length) } : {}),
       ...(green ? { green_screen: { handle: green.handle, color: green.color, similarity: green.similarity } } : {}),
@@ -834,7 +836,10 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...editBody(), draft: true, ...(withoutCaptions ? { captions: null } : {}) }),
       });
-      if (!r.ok) throw new Error((await readApiError(r)).message);
+      if (!r.ok) {
+        const m = (await readApiError(r)).message as unknown;
+        throw new Error(typeof m === "string" ? m : JSON.stringify(m));
+      }
       let job: Job = await r.json();
       for (let i = 0; i < 80 && !isTerminal(job.status) && token === draftToken.current; i++) {
         await new Promise((ok) => setTimeout(ok, 1500));
