@@ -895,6 +895,42 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     return Status(202, services.job_dict(job))
 
 
+class SplitIn(Schema):
+    source: str
+
+
+@api.post("/jobs/{job_id}/split", response={202: dict[str, Any]})
+def split_layers(request: HttpRequest, job_id: str, body: SplitIn) -> Status[dict[str, Any]]:
+    """Make the next version of a video as separate layers: its picture and its sound apart."""
+    org = _org(request)
+    parent = _job(request, job_id)
+    if not parent.finished:
+        raise ApiError(409, "parent_running", "wait for that version to finish first")
+    engine = services.engine_for(org)
+    source = _resolve(engine, body.source)
+    if source.media is not MediaType.VIDEO:
+        raise ApiError(422, "bad_request", "only videos can be split into layers")
+    if not engine.probe(source).get("audio"):
+        raise ApiError(422, "bad_request", "this video has no sound to separate")
+    services.check_rate(request.api_key)  # type: ignore[attr-defined]
+    services.check_quota(org)
+    spec = edits.split_spec(source.handle)
+    _validated(engine, spec)
+    job = Job.objects.create(
+        parent=parent,
+        org=org,
+        created_by=request.api_key,  # type: ignore[attr-defined]
+        kind="spec",
+        spec=spec,
+        prompt="Split into layers: the picture and the sound",
+        assets=[source.handle],
+        voice=parent.voice,
+    )
+    enqueue(job)
+    job.refresh_from_db()
+    return Status(202, services.job_dict(job))
+
+
 def _spoken(org: Org, engine: Engine, text: str, voice_id: str) -> Any:
     """A voiceover of `text` in one of the voices (or the user's own); returns its info."""
     from atelier.agent.budget import Budget

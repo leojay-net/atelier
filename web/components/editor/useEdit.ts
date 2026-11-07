@@ -103,7 +103,9 @@ const MUSIC0 = {
  * pieces (player, timeline, panels) all read this one object, so they can sit anywhere in the
  * layout. It starts over by itself when `source` (the video being edited) changes.
  */
-export function useEdit(jobId: string, source: string) {
+export type Soundtrack = { handle: string; name: string };
+
+export function useEdit(jobId: string, source: string, sound: Soundtrack | null = null) {
   const video = useRef<HTMLVideoElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const audio = useRef<PreviewAudio | null>(null);
@@ -121,7 +123,8 @@ export function useEdit(jobId: string, source: string) {
   const [speed, setSpeed] = useState(1);
   const [texts, setTexts] = useState<TextItem[]>([]);
   const [voice, setVoice] = useState(VOICE0);
-  const [music, setMusic] = useState(MUSIC0);
+  const soundMusic = sound ? { ...MUSIC0, on: true, mode: "upload" as const, handle: sound.handle, name: sound.name, volume: 1 } : MUSIC0;
+  const [music, setMusic] = useState(soundMusic);
   const [sounds, setSounds] = useState<Sound[]>([]);
   const [accents, setAccents] = useState<VoiceAccent[]>([]);
   const [mine, setMine] = useState(false);
@@ -155,7 +158,7 @@ export function useEdit(jobId: string, source: string) {
     setSpeed(1);
     setTexts([]);
     setVoice(VOICE0);
-    setMusic(MUSIC0);
+    setMusic(soundMusic);
     setSounds([]);
     setMuted(UNMUTED);
     setAdjust(NEUTRAL);
@@ -470,7 +473,8 @@ export function useEdit(jobId: string, source: string) {
     speed !== 1 ||
     texts.some((t) => t.text.trim()) ||
     (voice.on && Boolean(voice.handle || voice.text.trim())) ||
-    (music.on && Boolean(music.handle || (music.mode === "compose" && music.compose.trim()))) ||
+    (music.on && Boolean(music.handle || (music.mode === "compose" && music.compose.trim())) && !(sound && music.handle === sound.handle)) ||
+    (sound !== null && !(music.on && music.handle === sound.handle && !muted.music)) ||
     sounds.length > 0;
 
   const makingOnSave =
@@ -547,6 +551,25 @@ export function useEdit(jobId: string, source: string) {
       onSaved(job);
     } catch (e) {
       setError(e instanceof Error ? e.message : "That didn't save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Make the next version with the picture and the sound as two layers. */
+  async function splitLayers(onSaved: (job: Job) => void) {
+    setSaving(true);
+    setError("");
+    try {
+      const r = await fetch(`/api/proxy/jobs/${jobId}/split`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      if (!r.ok) throw new Error((await readApiError(r)).message);
+      onSaved(await r.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
     } finally {
       setSaving(false);
     }
@@ -754,6 +777,8 @@ export function useEdit(jobId: string, source: string) {
     dirty,
     makingOnSave,
     save,
+    splitLayers,
+    hasSoundLayer: sound !== null,
   };
 }
 

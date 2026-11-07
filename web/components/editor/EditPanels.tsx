@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/refs -- `edit` is one object from useEdit; its functions read refs only in event handlers, which the rule can't see through */
 
 import { AudioLines, Captions, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
+import type { Job } from "@/lib/types";
 import { Btn, Slider, field } from "./EditUi";
 import {
   FILTERS,
@@ -172,10 +173,20 @@ export function TextPanel({ edit }: { edit: Edit }) {
   );
 }
 
-export function AudioPanel({ edit }: { edit: Edit }) {
+export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) => void }) {
   const { voice, setVoice, music, setMusic, accents, mine, making, now } = edit;
   return (
     <div className="space-y-5">
+      {!edit.hasSoundLayer ? (
+        <section className="space-y-1.5">
+          <Btn onClick={() => edit.splitLayers(onSplit)} disabled={edit.saving || edit.sending}>
+            Put the picture and the sound on separate layers
+          </Btn>
+          <p className="text-[12px] text-fg-tertiary">
+            Makes a new version where you can mute, replace or remove the sound without touching the picture.
+          </p>
+        </section>
+      ) : null}
       <section className="space-y-2.5">
         <label className="flex items-center gap-2 font-medium">
           <input

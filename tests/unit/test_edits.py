@@ -335,3 +335,24 @@ def test_captions_and_stabilise_make_a_valid_spec(tmp_path: Path) -> None:
     ops = [s["op"] for s in spec["steps"]]
     assert ops == ["video.stabilize", "transcribe", "video.captions", "export"]
     engine.validate(spec)  # the speech model is not run here; the wiring must be valid
+
+
+def test_a_video_splits_into_its_picture_and_its_sound() -> None:
+    _, api = make_org("acme")
+    clip = api.upload("clip.mp4", CLIP.read_bytes()).json()["handle"]
+    spec = {"in": clip, "ops": [["export", {"preset": "web_h264"}]]}
+    body = json.dumps({"title": "My Clip", "summary": "Done.", "warnings": [], "question": ""})
+    api_support.model = ScriptedModel(
+        message([tool_use("run_pipeline", {"spec": spec})], "tool_use"),
+        message([text(body)], "end_turn"),
+    )
+    first = api.post("/jobs", {"prompt": "tidy my clip", "assets": [clip]}).json()
+    (video,) = [o["handle"] for o in first["result"]["outputs"].values()]
+    res = api.post(f"/jobs/{first['id']}/split", {"source": video})
+    assert res.status_code == 202, res.content
+    done = res.json()
+    assert done["status"] == "succeeded" and done["parent"] == first["id"]
+    outs = done["result"]["outputs"]
+    assert outs["picture"]["media"] == "video" and outs["sound"]["media"] == "audio"
+    silent = api.post(f"/jobs/{done['id']}/split", {"source": outs["picture"]["handle"]})
+    assert silent.status_code == 422  # nothing left to separate
