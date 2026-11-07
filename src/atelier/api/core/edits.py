@@ -72,6 +72,8 @@ class OverlayItem(BaseModel):
     fade: float = Field(0.0, ge=0, le=5)  # fades in and out (needs `end`)
     blend: Literal["normal", "screen", "multiply", "overlay", "addition"] = "normal"
     sound: bool = False  # a video picture-in-picture keeps its own sound
+    scale_to: float | None = Field(None, gt=0, le=1)  # grows or shrinks to this width by `end`
+    spin: float = Field(0.0, ge=-720, le=720)  # degrees it turns by `end`
 
 
 class BackgroundItem(BaseModel):
@@ -80,6 +82,18 @@ class BackgroundItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal["blur", "color"] = "blur"
     color: str = Field("#00b140", pattern=r"^#[0-9a-fA-F]{6}$")
+    method: Literal["model", "static"] = "model"  # static: a camera that does not move, no model
+
+
+class MaskItem(BaseModel):
+    """Show only a shape of the picture (the rest is a colour or a blur)."""
+
+    model_config = ConfigDict(extra="forbid")
+    shape: Literal["circle", "rounded", "diamond"] = "circle"
+    inset: float = Field(0.0, ge=0, le=0.6)
+    feather: float = Field(0.03, ge=0, le=0.5)
+    background: Literal["color", "blur"] = "color"
+    color: str = Field("#000000", pattern=r"^#[0-9a-fA-F]{6}$")
 
 
 class GreenScreenItem(BaseModel):
@@ -160,6 +174,7 @@ class EditIn(BaseModel):
     append: list[AppendItem] = Field(default_factory=list, max_length=8)
     background: BackgroundItem | None = None
     green_screen: GreenScreenItem | None = None
+    mask: MaskItem | None = None
     denoise: bool = False  # reduce noise in the video's own sound
     loudnorm: bool = False  # even out the final loudness (-14 LUFS)
     stabilize: bool = False
@@ -317,6 +332,8 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
         done.append("a new background")
     if edit.green_screen:
         done.append("green screen swapped")
+    if edit.mask:
+        done.append(f"a {edit.mask.shape} mask")
     if edit.voiceover and edit.voiceover.effect:
         done.append(f"a {edit.voiceover.effect} voice")
     if edit.append:
@@ -412,7 +429,10 @@ def build_spec(
         add("video.stabilize", {})
     if edit.background:
         add("video.remove_background",
-            {"background": edit.background.mode, "color": edit.background.color})  # fmt: skip
+            {"background": edit.background.mode, "color": edit.background.color,
+             "method": edit.background.method})  # fmt: skip
+    if edit.mask:
+        add("video.mask", edit.mask.model_dump())
     if edit.green_screen and green_handle:
         inputs["gs"] = green_handle
         add("video.chromakey", {"color": edit.green_screen.color,
@@ -463,6 +483,10 @@ def build_spec(
                     oargs["move_to"] = ov.move_to
                 if ov.fade:
                     oargs["fade"] = ov.fade
+                if ov.scale_to:
+                    oargs["scale_to"] = ov.scale_to
+                if ov.spin:
+                    oargs["spin"] = ov.spin
         if is_video:
             oargs["audio"] = "mix" if ov.sound else "main_only"
             add("video.pip", oargs, [f"ov{i}"])

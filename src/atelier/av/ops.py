@@ -8,6 +8,7 @@ terms of what the previous steps produced.
 
 from __future__ import annotations
 
+import io
 import math
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, TypeVar
@@ -17,7 +18,7 @@ from PIL import Image
 from pydantic import Field, model_validator
 
 from atelier.av.export import av_summary
-from atelier.av.graph import Graph, num
+from atelier.av.graph import Graph, Source, num
 from atelier.media import MediaType
 from atelier.ops.registry import Artifact, Determinism, OpError, Params, op
 from atelier.spec.types import Aspect, Fraction, Timecode
@@ -329,6 +330,12 @@ class OverlayParams(Params):
     blend: Literal["normal", "screen", "multiply", "overlay", "addition"] = Field(
         "normal", description="how it mixes with the picture (screen for light leaks, multiply…)"
     )
+    scale_to: Fraction | None = Field(
+        None, gt=0, le=1, description="grow or shrink to this width fraction by end (a keyframe)"
+    )
+    spin: float = Field(
+        0.0, ge=-720, le=720, description="degrees it turns between start and end (a keyframe)"
+    )
 
     @model_validator(mode="after")
     def _ordered(self) -> OverlayParams:
@@ -336,6 +343,8 @@ class OverlayParams(Params):
             raise ValueError("move_to needs an end time: the glide lasts from start to end")
         if self.fade > 0 and self.end is None:
             raise ValueError("fade needs an end time: it fades out there")
+        if (self.scale_to is not None or self.spin) and self.end is None:
+            raise ValueError("scale_to and spin need an end time: they last from start to end")
         if self.end is not None and self.end <= self.start:
             raise ValueError(f"end ({self.end:g}s) must be after start ({self.start:g}s)")
         return self
@@ -408,22 +417,44 @@ def overlay(g: Graph, p: OverlayParams) -> None:
     if p.opacity < 1 and not blended:
         (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
         (img,) = g.add("colorchannelmixer", {"aa": p.opacity}, ins=[img])
-    if p.fade > 0 and p.end is not None and g.duration is not None:
-        # a still picture is one frame: repeat it for the length of the video so it can fade
+    animated = p.end is not None and (p.scale_to is not None or p.spin != 0)
+    if (p.fade > 0 or animated) and p.end is not None and g.duration is not None:
+        # a still picture is one frame: repeat it for the length of the video so it can change
         fps = g.fps or 30.0
         (img,) = g.add("format", {"pix_fmts": "rgba"}, ins=[img])
         (img,) = g.add("loop", {"loop": -1, "size": 1, "start": 0}, ins=[img])
         (img,) = g.add("setpts", {"expr": f"N/({num(fps)}*TB)"}, ins=[img])
         (img,) = g.add("trim", {"end": num(g.duration)}, ins=[img])
-        fd = min(p.fade, (p.end - p.start) / 2)
-        (img,) = g.add(
-            "fade", {"t": "in", "st": num(p.start), "d": num(fd), "alpha": 1}, ins=[img]
-        )
-        (img,) = g.add(
-            "fade", {"t": "out", "st": num(p.end - fd), "d": num(fd), "alpha": 1}, ins=[img]
-        )
+        progress = f"clip((t-{num(p.start)})/{num(p.end - p.start)},0,1)"
+        if p.scale_to is not None:
+            k = f"(1+({num(p.scale_to / p.scale)}-1)*{progress})"
+            (img,) = g.add(
+                "scale", {"w": f"max(2,iw*{k})", "h": f"max(2,ih*{k})", "eval": "frame"}, ins=[img]
+            )
+        if p.spin:
+            (img,) = g.add(
+                "rotate",
+                {"a": f"{num(p.spin)}*PI/180*{progress}", "ow": "hypot(iw,ih)", "oh": "hypot(iw,ih)",
+                 "c": "none"},
+                ins=[img],
+            )  # fmt: skip
+        if p.fade > 0:
+            fd = min(p.fade, (p.end - p.start) / 2)
+            (img,) = g.add(
+                "fade", {"t": "in", "st": num(p.start), "d": num(fd), "alpha": 1}, ins=[img]
+            )
+            (img,) = g.add(
+                "fade", {"t": "out", "st": num(p.end - fd), "d": num(fd), "alpha": 1}, ins=[img]
+            )
     args: dict[str, Any] = {"x": x, "y": y}
-    if p.move_to is not None and p.end is not None:
+    if animated and p.end is not None:  # the size changes: place by the middle of the anchor
+        fx0, fy0 = _ANCHOR[p.anchor]
+        fx1, fy1 = _ANCHOR[p.move_to] if p.move_to else (fx0, fy0)
+        k = f"clip((t-{num(p.start)})/{num(p.end - p.start)},0,1)"
+        fx, fy = f"({fx0}+({fx1}-{fx0})*{k})", f"({fy0}+({fy1}-{fy0})*{k})"
+        m = margin
+        args = {"x": f"(W-w)*{fx}+{m}*(1-2*{fx})", "y": f"(H-h)*{fy}+{m}*(1-2*{fy})", "eval": "frame"}
+    elif p.move_to is not None and p.end is not None:
         tx, ty = _ANCHOR[p.move_to]
         x2 = round(tx * (g.width - ow - 2 * margin)) + margin
         y2 = round(ty * (g.height - oh - 2 * margin)) + margin
@@ -768,4 +799,67 @@ def chromakey(g: Graph, p: ChromaKeyParams) -> None:
         prefix="v",
     )
     (g.video,) = g.add("overlay", {"shortest": 1}, ins=[bg, fg], prefix="v")
+    g.origin = None
+
+
+# -- mask: keep a shape of the picture --------------------------------------------------------
+
+
+class MaskParams(Params):
+    shape: Literal["circle", "rounded", "diamond"] = Field(
+        "circle", description="the part of the picture that stays: a circle, rounded box or diamond"
+    )
+    inset: Fraction = Field(0.0, ge=0, le=0.6, description="shrink the shape from the edges")
+    feather: Fraction = Field(0.03, ge=0, le=0.5, description="softness of the shape's edge")
+    background: Literal["color", "blur"] = Field(
+        "color", description="what shows outside the shape: a colour, or the picture blurred"
+    )
+    color: str = Field("#000000", pattern=r"^#[0-9a-fA-F]{6}$", description="the plain colour")
+
+
+@video_op(
+    name="video.mask",
+    version="1.0.0",
+    params=MaskParams,
+    description="show only a circle, rounded box or diamond of the picture",
+)
+def mask(g: Graph, p: MaskParams) -> None:
+    """Keep a shape of the picture and fill the rest with a colour or a blurred copy. Pure
+    filters (no model): a per-pixel alpha from the distance to the middle."""
+    assert g.video is not None
+    total = g.duration
+    if total is None:
+        raise OpError("the video's length is not known here, so the mask cannot be applied")
+    feather = max(p.feather, 0.004)
+    # the shape is drawn once, as a grey picture (white = kept), not worked out on every frame
+    yy, xx = np.mgrid[0 : g.height, 0 : g.width].astype(np.float32)
+    u = (xx + 0.5 - g.width / 2) / (g.width / 2 * (1 - p.inset))
+    v = (yy + 0.5 - g.height / 2) / (g.height / 2 * (1 - p.inset))
+    if p.shape == "circle":
+        edge = 1 - np.hypot(u, v)
+    elif p.shape == "diamond":
+        edge = 1 - (np.abs(u) + np.abs(v))
+    else:  # rounded box: distance from the inner box, in units of the corner radius
+        r = 0.3
+        edge = 1 - np.hypot(np.maximum(np.abs(u) - (1 - r), 0), np.maximum(np.abs(v) - (1 - r), 0)) / r
+    alpha = np.clip(edge / feather, 0, 1)
+    shape_png = io.BytesIO()
+    Image.fromarray(np.rint(alpha * 255).astype(np.uint8), "L").save(shape_png, "PNG")
+    name = g.write_file(f"mask{len(g.sources)}.png", shape_png.getvalue())
+    index = g.add_source(Source(g.work / name, MediaType.IMAGE, ".png", {"size": [g.width, g.height]}))
+    if p.background == "blur":
+        front, back = g.add("split", {"outputs": 2}, ins=[g.video], outs=2, prefix="v")
+        (back,) = g.add("gblur", {"sigma": 24}, ins=[back], prefix="v")
+    else:
+        front = g.video
+        (back,) = g.add(
+            "color",
+            {"c": "0x" + p.color[1:], "s": f"{g.width}x{g.height}", "r": num(g.fps or 30.0),
+             "d": num(total)},
+            ins=[], prefix="v",
+        )  # fmt: skip
+    (front,) = g.add("format", {"pix_fmts": "rgba"}, ins=[front], prefix="v")
+    (shape,) = g.add("format", {"pix_fmts": "gray"}, ins=[g.source_label(index)], prefix="v")
+    (front,) = g.add("alphamerge", {}, ins=[front, shape], prefix="v")
+    (g.video,) = g.add("overlay", {"shortest": 1, "format": "auto"}, ins=[back, front], prefix="v")
     g.origin = None

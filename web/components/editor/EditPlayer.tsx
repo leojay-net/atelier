@@ -55,6 +55,15 @@ export function EditPlayer({ edit }: { edit: Edit }) {
     edit.fadeOut > 0 ? (edit.length - at) / edit.fadeOut : 1,
     1,
   );
+  const m = edit.mask;
+  const inset = m ? `${m.inset * 50}%` : "0%";
+  const maskPath = !m
+    ? undefined
+    : m.shape === "circle"
+      ? `ellipse(${50 * (1 - m.inset)}% ${50 * (1 - m.inset)}% at 50% 50%)`
+      : m.shape === "rounded"
+        ? `inset(${inset} round 15%)`
+        : `polygon(50% ${m.inset * 50}%, ${100 - m.inset * 50}% 50%, 50% ${100 - m.inset * 50}%, ${m.inset * 50}% 50%)`;
   const shown = (edit.muted.text ? [] : texts).filter((t) => now >= t.start && now < t.end);
 
   return (
@@ -110,7 +119,7 @@ export function EditPlayer({ edit }: { edit: Edit }) {
     <div ref={stage} className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
       <div
         className="relative overflow-hidden rounded-md shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
-        style={{ width: fit[0], height: fit[1], containerType: "size" }}
+        style={{ width: fit[0], height: fit[1], containerType: "size", background: m?.background === "color" ? m.color : undefined }}
       >
         <video
           key={edit.source}
@@ -130,6 +139,7 @@ export function EditPlayer({ edit }: { edit: Edit }) {
             objectPosition: `${focus[0] * 100}% ${focus[1] * 100}%`,
             filter: lookCss,
             opacity: Math.max(0, Math.min(1, fade)),
+            clipPath: maskPath,
           }}
         />
         {stickers.map((o) => {
@@ -148,12 +158,14 @@ export function EditPlayer({ edit }: { edit: Edit }) {
             o.fade && o.end !== null
               ? Math.max(0, Math.min(1, (now - o.start) / o.fade, (o.end - now) / o.fade))
               : 1;
+          const prog = o.end !== null ? Math.max(0, Math.min(1, (now - o.start) / Math.max(0.01, o.end - o.start))) : 0;
+          const size = o.scaleTo ? o.scale + (o.scaleTo - o.scale) * prog : o.scale;
           const style: React.CSSProperties = {
-            width: `${(o.blend && o.blend !== "normal" ? 1 : o.scale) * 100}%`,
+            width: `${(o.blend && o.blend !== "normal" ? 1 : size) * 100}%`,
             opacity: o.opacity * fadeK,
             left: `calc(${fx * 100}% + ${(1 - 2 * fx) * 4}%)`,
             top: `calc(${fy * 100}% + ${(1 - 2 * fy) * 4}%)`,
-            transform: `translate(${-fx * 100}%, ${-fy * 100}%)`,
+            transform: `translate(${-fx * 100}%, ${-fy * 100}%)${o.spin ? ` rotate(${o.spin * prog}deg)` : ""}`,
             borderRadius: o.shape === "circle" ? "50%" : o.shape === "rounded" ? "20%" : undefined,
             mixBlendMode: o.blend && o.blend !== "normal" ? (o.blend === "addition" ? "plus-lighter" : o.blend) : undefined,
             ...(o.blend && o.blend !== "normal" ? { left: 0, top: 0, transform: "none", height: "100%", objectFit: "cover" as const } : {}),
