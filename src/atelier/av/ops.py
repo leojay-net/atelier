@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Literal, TypeVar
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 from pydantic import Field, model_validator
 
 from atelier.av.export import av_summary
@@ -494,12 +494,29 @@ class ColorParams(Params):
     contrast: float = Field(1.0, ge=0.0, le=3.0, description="1 unchanged; above 1 stronger")
     saturation: float = Field(1.0, ge=0.0, le=3.0, description="0 grayscale, 1 unchanged")
     gamma: float = Field(1.0, ge=0.1, le=3.0, description="above 1 lifts the midtones")
+    to_brightness: float | None = Field(None, ge=-1.0, le=1.0, description="value reached at `end`")
+    to_contrast: float | None = Field(None, ge=0.0, le=3.0, description="value reached at `end`")
+    to_saturation: float | None = Field(None, ge=0.0, le=3.0, description="value reached at `end`")
+    to_gamma: float | None = Field(None, ge=0.1, le=3.0, description="value reached at `end`")
+    start: Timecode = Field(0.0, description="when the change begins (with any to_ value)")
+    end: Timecode | None = Field(None, description="when the change is complete (with any to_ value)")
 
     @model_validator(mode="after")
     def _something(self) -> ColorParams:
-        if (self.brightness, self.contrast, self.saturation, self.gamma) == (0.0, 1.0, 1.0, 1.0):
+        if self.animated and (self.end is None or self.end <= self.start):
+            raise ValueError("to_ values need an `end` after `start`: the change lasts from one to the other")
+        if not self.animated and (
+            (self.brightness, self.contrast, self.saturation, self.gamma) == (0.0, 1.0, 1.0, 1.0)
+        ):
             raise ValueError("nothing to change: every value is at its neutral setting")
         return self
+
+    @property
+    def animated(self) -> bool:
+        return any(
+            v is not None
+            for v in (self.to_brightness, self.to_contrast, self.to_saturation, self.to_gamma)
+        )
 
 
 @video_op(
@@ -512,6 +529,23 @@ def color(g: Graph, p: ColorParams) -> None:
     """Adjust the picture: `brightness` shifts it, `contrast` stretches it around the middle,
     `saturation` scales color (0 is black and white) and `gamma` bends the midtones. The sound
     is untouched. Values are neutral at 0 / 1 / 1 / 1."""
+    if p.animated and p.end is not None:  # each value moves from its start to its end value
+        k = f"clip((t-{num(p.start)})/{num(p.end - p.start)},0,1)"
+
+        def ramp(a: float, b: float | None) -> str | float:
+            return a if b is None else f"{num(a)}+({num(b - a)})*{k}"
+
+        g.vf(
+            "eq",
+            {
+                "brightness": ramp(p.brightness, p.to_brightness),
+                "contrast": ramp(p.contrast, p.to_contrast),
+                "saturation": ramp(p.saturation, p.to_saturation),
+                "gamma": ramp(p.gamma, p.to_gamma),
+                "eval": "frame",
+            },
+        )
+        return
     g.vf(
         "eq",
         {
@@ -806,9 +840,15 @@ def chromakey(g: Graph, p: ChromaKeyParams) -> None:
 
 
 class MaskParams(Params):
-    shape: Literal["circle", "rounded", "diamond"] = Field(
-        "circle", description="the part of the picture that stays: a circle, rounded box or diamond"
+    shape: Literal["circle", "rounded", "diamond", "polygon"] = Field(
+        "circle",
+        description="the part of the picture that stays: a circle, rounded box, diamond or a "
+        "drawn polygon (give `points`)",
     )
+    points: list[tuple[float, float]] | None = Field(
+        None, min_length=3, max_length=64,
+        description="corners of a drawn shape as fractions of the frame, [[x, y], ...]",
+    )  # fmt: skip
     inset: Fraction = Field(0.0, ge=0, le=0.6, description="shrink the shape from the edges")
     feather: Fraction = Field(0.03, ge=0, le=0.5, description="softness of the shape's edge")
     background: Literal["color", "blur"] = Field(
@@ -830,6 +870,8 @@ def mask(g: Graph, p: MaskParams) -> None:
     total = g.duration
     if total is None:
         raise OpError("the video's length is not known here, so the mask cannot be applied")
+    if p.shape == "polygon" and not p.points:
+        raise OpError("a drawn shape needs `points`")
     feather = max(p.feather, 0.004)
     # the shape is drawn once, as a grey picture (white = kept), not worked out on every frame
     yy, xx = np.mgrid[0 : g.height, 0 : g.width].astype(np.float32)
@@ -838,14 +880,26 @@ def mask(g: Graph, p: MaskParams) -> None:
         half_x = half_y = min(half_x, half_y)
     u = (xx + 0.5 - g.width / 2) / (half_x * (1 - p.inset))
     v = (yy + 0.5 - g.height / 2) / (half_y * (1 - p.inset))
-    if p.shape == "circle":
+    if p.shape == "polygon":
+        edge = np.zeros_like(u)
+    elif p.shape == "circle":
         edge = 1 - np.hypot(u, v)
     elif p.shape == "diamond":
         edge = 1 - (np.abs(u) + np.abs(v))
     else:  # rounded box: distance from the inner box, in units of the corner radius
         r = 0.3
         edge = 1 - np.hypot(np.maximum(np.abs(u) - (1 - r), 0), np.maximum(np.abs(v) - (1 - r), 0)) / r
-    alpha = np.clip(edge / feather, 0, 1)
+    if p.shape == "polygon":
+        canvas = Image.new("L", (g.width, g.height), 0)
+        ImageDraw.Draw(canvas).polygon(
+            [(min(max(x, 0.0), 1.0) * g.width, min(max(y, 0.0), 1.0) * g.height) for x, y in p.points or []],
+            fill=255,
+        )
+        if feather > 0.004:
+            canvas = canvas.filter(ImageFilter.GaussianBlur(feather * min(g.width, g.height) / 2))
+        alpha = np.asarray(canvas, dtype=np.float32) / 255.0
+    else:
+        alpha = np.clip(edge / feather, 0, 1)
     shape_png = io.BytesIO()
     Image.fromarray(np.rint(alpha * 255).astype(np.uint8), "L").save(shape_png, "PNG")
     name = g.write_file(f"mask{len(g.sources)}.png", shape_png.getvalue())
@@ -866,3 +920,49 @@ def mask(g: Graph, p: MaskParams) -> None:
     (front,) = g.add("alphamerge", {}, ins=[front, shape], prefix="v")
     (g.video,) = g.add("overlay", {"shortest": 1, "format": "auto"}, ins=[back, front], prefix="v")
     g.origin = None
+
+
+# -- zoom: a slow push in or pull out (a keyframe on the framing) -----------------------------
+
+
+class ZoomParams(Params):
+    keys: list[tuple[Timecode, float]] = Field(
+        min_length=2, max_length=16,
+        description="keyframes [[seconds, zoom], ...] in time order; 1 is the whole picture, "
+        "up to 4. The zoom glides in a straight line from one keyframe to the next",
+    )  # fmt: skip
+    focus_x: Fraction = Field(0.5, ge=0, le=1, description="0 left … 1 right: where it zooms to")
+    focus_y: Fraction = Field(0.5, ge=0, le=1, description="0 top … 1 bottom")
+
+    @model_validator(mode="after")
+    def _keys(self) -> ZoomParams:
+        times = [t for t, _ in self.keys]
+        if any(b <= a for a, b in zip(times, times[1:], strict=False)):
+            raise ValueError("keyframe times must increase")
+        if any(not 1.0 <= z <= 4.0 for _, z in self.keys):
+            raise ValueError("a zoom is between 1 and 4")
+        return self
+
+
+@video_op(
+    name="video.zoom",
+    version="1.1.0",
+    params=ZoomParams,
+    description="a smooth zoom in or out through keyframes, towards a point of the picture",
+)
+def zoom(g: Graph, p: ZoomParams) -> None:
+    """The picture is enlarged a little more (or less) on every frame and cropped back to its
+    frame around the focus point. Frame size and sound are unchanged."""
+    width, height = g.width, g.height
+    z = num(p.keys[0][1])
+    for (t0, z0), (t1, z1) in zip(p.keys, p.keys[1:], strict=False):
+        z += f"+({num(z1 - z0)})*clip((t-{num(t0)})/{num(t1 - t0)},0,1)"
+    z = f"({z})"
+    g.vf("scale", {"w": f"trunc(iw*{z}/2)*2", "h": f"trunc(ih*{z}/2)*2", "eval": "frame", "flags": "bicubic"})
+    g.vf(
+        "crop",
+        {
+            "w": width, "h": height,
+            "x": f"(iw-{width})*{num(p.focus_x)}", "y": f"(ih-{height})*{num(p.focus_y)}",
+        },
+    )  # fmt: skip

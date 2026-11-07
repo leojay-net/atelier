@@ -636,3 +636,47 @@ def test_a_sticker_can_grow_spin_and_glide(tmp_path: Path) -> None:
     assert args["scale_to"] == 0.4 and args["spin"] == 360
     out = engine.store.path(engine.run(spec).outputs["out"].hash)
     assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+
+
+def test_drawn_masks_animated_looks_and_zooms_render(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+
+    def run(steps: list[dict[str, Any]]) -> Path:
+        steps[-1]["id"] = "out"
+        done = engine.run({"version": 1, "inputs": {"v": clip}, "steps": steps, "outputs": ["out"]})
+        return engine.store.path(done.outputs["out"].hash)
+
+    export = {"op": "export", "in": ["s"], "args": {"preset": "web_h264"}}
+    out = run([{"id": "s", "op": "video.mask", "in": ["v"],
+                "args": {"shape": "polygon", "points": [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]],
+                         "background": "color", "color": "#00ff00"}}, dict(export)])  # fmt: skip
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+    out = run([{"id": "s", "op": "video.color", "in": ["v"],
+                "args": {"brightness": -0.4, "to_brightness": 0.0, "start": 0, "end": 3}}, dict(export)])  # fmt: skip
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+    out = run([{"id": "s", "op": "video.zoom", "in": ["v"],
+                "args": {"keys": [[0, 1], [2, 1.6], [3.5, 1.1]], "focus_x": 0.3}}, dict(export)])  # fmt: skip
+    info = probe(out)
+    assert float(info["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+    video = next(s for s in info["streams"] if s["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (640, 360)
+
+
+def test_polygon_mask_zoom_animated_look_and_clip_order() -> None:
+    edit = EditIn.model_validate({
+        "source": "j",
+        "mask": {"shape": "polygon", "points": [[0.5, 0.1], [0.9, 0.9], [0.1, 0.9]]},
+        "zoom": {"keys": [[0, 1], [2, 1.5]], "focus_x": 0.3},
+        "adjust": {"brightness": -0.3, "to_brightness": 0.0, "start": 0, "end": 2},
+        "append": [{"handle": "x"}, {"handle": "y"}],
+        "main_at": 1,
+    })  # fmt: skip
+    spec = build_spec(edit, 10.0, None, None, True, append_handles=["hx", "hy"])
+    ops = {s["op"]: s for s in spec["steps"]}
+    assert ops["video.mask"]["args"]["points"][0] == (0.5, 0.1)
+    assert ops["video.zoom"]["args"]["keys"][1] == (2, 1.5)
+    assert ops["video.color"]["args"]["to_brightness"] == 0.0
+    concat = ops["video.concat"]["in"]
+    assert concat[0] == "ap0" and concat[2] == "ap1" and concat[1] not in ("ap0", "ap1")
+    assert "a drawn mask" in describe(edit, [(0.0, 10.0)], 10.0)

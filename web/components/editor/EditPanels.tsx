@@ -2,7 +2,8 @@
 
 /* eslint-disable react-hooks/refs -- `edit` is one object from useEdit; its functions read refs only in event handlers, which the rule can't see through */
 
-import { AudioLines, Captions, Film, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
+import { useRef } from "react";
+import { ArrowDown, ArrowUp, AudioLines, Captions, Film, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
 import type { Job } from "@/lib/types";
 import { Btn, Slider, field } from "./EditUi";
 import {
@@ -576,6 +577,12 @@ function MoreClips({ edit }: { edit: Edit }) {
         <div key={c.id} className="space-y-1.5 rounded-lg border border-border bg-bg-subtle p-2">
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            <button type="button" aria-label="Move clip earlier" disabled={clips[0]?.id === c.id} onClick={() => edit.moveClip(clips.findIndex((x) => x.id === c.id), -1)} className={`${del} disabled:opacity-30`}>
+              <ArrowUp size={13} />
+            </button>
+            <button type="button" aria-label="Move clip later" disabled={clips[clips.length - 1]?.id === c.id} onClick={() => edit.moveClip(clips.findIndex((x) => x.id === c.id), 1)} className={`${del} disabled:opacity-30`}>
+              <ArrowDown size={13} />
+            </button>
             <button type="button" aria-label="Remove clip" onClick={() => setClips(clips.filter((x) => x.id !== c.id))} className={del}>
               <Trash2 size={13} />
             </button>
@@ -607,7 +614,20 @@ function MoreClips({ edit }: { edit: Edit }) {
           </div>
         </div>
       ))}
-      <p className="text-[12px] text-fg-tertiary">Clips are joined in the saved version. The preview shows only the first video.</p>
+      {clips.length > 0 ? (
+        <label className="flex items-center justify-between gap-2 text-[12px]">
+          This video plays
+          <select aria-label="Where this video plays" className={field} value={Math.min(edit.mainAt, clips.length)} onChange={(e) => edit.setMainAt(Number(e.target.value))}>
+            <option value={0}>first</option>
+            {clips.map((c, i) => (
+              <option key={c.id} value={i + 1}>
+                {i + 1 === clips.length ? "last" : `after ${c.name}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <p className="text-[12px] text-fg-tertiary">Clips are joined in this order in the full preview and the saved version. Texts and stickers follow the joined video&apos;s time.</p>
     </section>
   );
 }
@@ -692,7 +712,14 @@ function FadesAndMore({ edit }: { edit: Edit }) {
         onChange={(e) =>
           edit.setMask(
             e.target.value
-              ? { shape: e.target.value as "circle" | "rounded" | "diamond", inset: edit.mask?.inset ?? 0, feather: edit.mask?.feather ?? 0.03, background: edit.mask?.background ?? "color", color: edit.mask?.color ?? "#000000" }
+              ? {
+                  shape: e.target.value as "circle" | "rounded" | "diamond" | "polygon",
+                  points: e.target.value === "polygon" ? (edit.mask?.points ?? []) : undefined,
+                  inset: edit.mask?.inset ?? 0,
+                  feather: edit.mask?.feather ?? 0.03,
+                  background: edit.mask?.background ?? "color",
+                  color: edit.mask?.color ?? "#000000",
+                }
               : null,
           )
         }
@@ -701,10 +728,12 @@ function FadesAndMore({ edit }: { edit: Edit }) {
         <option value="circle">Circle</option>
         <option value="rounded">Rounded box</option>
         <option value="diamond">Diamond</option>
+        <option value="polygon">Draw my own</option>
       </select>
+      {edit.mask?.shape === "polygon" ? <DrawPad edit={edit} /> : null}
       {edit.mask ? (
         <div className="space-y-2">
-          <Slider label={`Smaller ${Math.round(edit.mask.inset * 100)}%`} value={edit.mask.inset} min={0} max={0.6} step={0.02} onChange={(v) => edit.setMask({ ...edit.mask!, inset: v })} />
+          {edit.mask.shape !== "polygon" ? <Slider label={`Smaller ${Math.round(edit.mask.inset * 100)}%`} value={edit.mask.inset} min={0} max={0.6} step={0.02} onChange={(v) => edit.setMask({ ...edit.mask!, inset: v })} /> : null}
           <Slider label={`Soft edge ${Math.round(edit.mask.feather * 100)}%`} value={edit.mask.feather} min={0} max={0.3} step={0.01} onChange={(v) => edit.setMask({ ...edit.mask!, feather: v })} />
           <label className="flex items-center justify-between gap-2 text-[12px]">
             Outside the shape
@@ -718,6 +747,7 @@ function FadesAndMore({ edit }: { edit: Edit }) {
           ) : null}
         </div>
       ) : null}
+      <ZoomSection edit={edit} />
       <p className="pt-1 font-medium">Green screen</p>
       {edit.green ? (
         <div className="space-y-2 rounded-lg border border-border bg-bg-subtle p-2">
@@ -799,6 +829,7 @@ export function FiltersPanel({ edit }: { edit: Edit }) {
       <Slider label={`Contrast ${adjust.contrast.toFixed(2)}`} value={adjust.contrast} min={0.5} max={2} step={0.01} onChange={(v) => set({ contrast: v })} />
       <Slider label={`Saturation ${adjust.saturation.toFixed(2)}`} value={adjust.saturation} min={0} max={2} step={0.01} onChange={(v) => set({ saturation: v })} />
       <Slider label={`Midtones ${adjust.gamma.toFixed(2)}`} value={adjust.gamma} min={0.5} max={1.8} step={0.01} onChange={(v) => set({ gamma: v })} />
+      <AnimatedLook edit={edit} />
       <Btn
         onClick={() => {
           setAdjust(NEUTRAL);
@@ -961,5 +992,148 @@ export function StickersPanel({ edit }: { edit: Edit }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Draw the part of the picture to keep: click to add corners, drag a corner to move it. */
+function DrawPad({ edit }: { edit: Edit }) {
+  const pad = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const drag = useRef<number | null>(null);
+  const m = edit.mask!;
+  const pts = m.points ?? [];
+  const set = (points: [number, number][]) => edit.setMask({ ...m, points });
+  const at = (e: React.PointerEvent): [number, number] => {
+    const r = pad.current!.getBoundingClientRect();
+    const f = (v: number) => Math.max(0, Math.min(1, Math.round(v * 1000) / 1000));
+    return [f((e.clientX - r.left) / r.width), f((e.clientY - r.top) / r.height)];
+  };
+  const grabFrame = () => canvas.current && edit.drawFrame(canvas.current);
+  return (
+    <div className="space-y-2">
+      <div
+        ref={pad}
+        data-testid="draw-pad"
+        className="relative w-full cursor-crosshair touch-none overflow-hidden rounded-md border border-border bg-black"
+        style={{ aspectRatio: `${edit.natural[0]} / ${edit.natural[1]}` }}
+        onPointerDown={(e) => {
+          if (drag.current !== null || pts.length >= 64) return;
+          set([...pts, at(e)]);
+        }}
+        onPointerMove={(e) => {
+          if (drag.current === null) return;
+          const next = [...pts];
+          next[drag.current] = at(e);
+          set(next);
+        }}
+        onPointerUp={() => (drag.current = null)}
+      >
+        <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
+          {pts.length >= 3 ? <polygon points={pts.map(([x, y]) => `${x * 100},${y * 100}`).join(" ")} fill="rgba(90,162,255,0.28)" stroke="#5aa2ff" strokeWidth="0.6" vectorEffect="non-scaling-stroke" /> : null}
+        </svg>
+        {pts.map(([x, y], i) => (
+          <span
+            key={i}
+            data-testid="draw-point"
+            className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white bg-accent"
+            style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              drag.current = i;
+              pad.current?.setPointerCapture(e.pointerId);
+            }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Btn onClick={grabFrame}>Show this frame</Btn>
+        <Btn onClick={() => set(pts.slice(0, -1))} disabled={pts.length === 0}>Undo a point</Btn>
+        <Btn onClick={() => set([])} disabled={pts.length === 0}>Clear</Btn>
+      </div>
+      <p className="text-[12px] text-fg-tertiary">
+        {pts.length < 3 ? `Click ${3 - pts.length} more point${pts.length === 2 ? "" : "s"} to outline what stays.` : "Drag a point to adjust. Everything outside the outline is hidden."}
+      </p>
+    </div>
+  );
+}
+
+/** A zoom through keyframes: where on the timeline the picture is how close. */
+function ZoomSection({ edit }: { edit: Edit }) {
+  const z = edit.zoom;
+  const len = Math.max(1, edit.length);
+  const keys = z?.keys ?? [];
+  const put = (next: [number, number][]) =>
+    edit.setZoom(next.length >= 2 ? { keys: [...next].sort((a, b) => a[0] - b[0]), focus_x: z?.focus_x ?? 0.5, focus_y: z?.focus_y ?? 0.5 } : null);
+  const preset = (zooms: number[]) =>
+    edit.setZoom({ keys: zooms.map((v, i) => [Math.round(((len * i) / (zooms.length - 1)) * 10) / 10, v] as [number, number]), focus_x: z?.focus_x ?? 0.5, focus_y: z?.focus_y ?? 0.5 });
+  return (
+    <section className="space-y-2">
+      <p className="pt-1 font-medium">Zoom</p>
+      <div className="flex flex-wrap gap-2">
+        <Btn onClick={() => preset([1, 1.4])}>Push in</Btn>
+        <Btn onClick={() => preset([1.4, 1])}>Pull out</Btn>
+        <Btn onClick={() => preset([1, 1.35, 1])}>Pulse</Btn>
+        <Btn onClick={() => edit.setZoom(null)} disabled={!z}>No zoom</Btn>
+      </div>
+      {z ? (
+        <div className="space-y-2">
+          {keys.map(([t, v], i) => (
+            <div key={i} className="flex items-center gap-2 text-[12px]" data-testid="zoom-key">
+              <input aria-label="Keyframe time" type="number" min={0} step={0.1} className={`${field} w-16`} value={t}
+                onChange={(e) => put(keys.map((k, j) => (j === i ? [Math.max(0, Number(e.target.value) || 0), k[1]] : k)))} />
+              <span className="text-fg-tertiary">s</span>
+              <input aria-label="Keyframe zoom" type="range" min={1} max={3} step={0.05} value={v} className="min-w-0 flex-1"
+                onChange={(e) => put(keys.map((k, j) => (j === i ? [k[0], Number(e.target.value)] : k)))} />
+              <span className="w-10 text-right tabular-nums">{v.toFixed(2)}×</span>
+              <button type="button" aria-label="Remove keyframe" disabled={keys.length <= 2} className={`${del} disabled:opacity-30`} onClick={() => put(keys.filter((_, j) => j !== i))}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+          <Btn onClick={() => put([...keys, [Math.round((edit.clock(edit.now) ?? 0) * 10) / 10, 1.2]])}>Add a keyframe at the playhead</Btn>
+          <Slider label={`Zooms towards: across ${Math.round(z.focus_x * 100)}%`} value={z.focus_x} min={0} max={1} step={0.01} onChange={(v) => edit.setZoom({ ...z, focus_x: v })} />
+          <Slider label={`down ${Math.round(z.focus_y * 100)}%`} value={z.focus_y} min={0} max={1} step={0.01} onChange={(v) => edit.setZoom({ ...z, focus_y: v })} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** The look changes over time: it starts as set above and ends as set here. */
+function AnimatedLook({ edit }: { edit: Edit }) {
+  const { adjust, setAdjust, setFilter } = edit;
+  const on = adjust.end !== undefined;
+  const len = Math.max(1, Math.round(edit.length * 10) / 10);
+  const to = (k: "brightness" | "contrast" | "saturation" | "gamma") => adjust[`to_${k}`] ?? adjust[k];
+  const patch = (p: Partial<typeof adjust>) => {
+    setAdjust({ ...adjust, ...p });
+    setFilter("custom");
+  };
+  return (
+    <section className="space-y-2 border-t border-border pt-3">
+      <label className="flex items-center gap-2 font-medium">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) =>
+            e.target.checked
+              ? patch({ start: 0, end: len, to_brightness: adjust.brightness, to_contrast: adjust.contrast, to_saturation: adjust.saturation, to_gamma: adjust.gamma })
+              : setAdjust({ brightness: adjust.brightness, contrast: adjust.contrast, saturation: adjust.saturation, gamma: adjust.gamma })
+          }
+        />
+        Change the look over time
+      </label>
+      {on ? (
+        <div className="space-y-2">
+          <p className="text-[12px] text-fg-tertiary">The sliders above are how it starts; these are how it ends.</p>
+          <Slider label={`Ends: brightness ${to("brightness").toFixed(2)}`} value={to("brightness")} min={-0.5} max={0.5} step={0.01} onChange={(v) => patch({ to_brightness: v })} />
+          <Slider label={`Ends: contrast ${to("contrast").toFixed(2)}`} value={to("contrast")} min={0.5} max={2} step={0.01} onChange={(v) => patch({ to_contrast: v })} />
+          <Slider label={`Ends: saturation ${to("saturation").toFixed(2)}`} value={to("saturation")} min={0} max={2} step={0.01} onChange={(v) => patch({ to_saturation: v })} />
+          <Slider label={`Starts changing at ${(adjust.start ?? 0).toFixed(1)} s`} value={adjust.start ?? 0} min={0} max={len} step={0.1} onChange={(v) => patch({ start: Math.min(v, (adjust.end ?? len) - 0.1) })} />
+          <Slider label={`Finished by ${(adjust.end ?? len).toFixed(1)} s`} value={adjust.end ?? len} min={0.1} max={len} step={0.1} onChange={(v) => patch({ end: Math.max(v, (adjust.start ?? 0) + 0.1) })} />
+        </div>
+      ) : null}
+    </section>
   );
 }

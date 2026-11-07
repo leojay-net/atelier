@@ -97,7 +97,7 @@ def test_prompt_stays_within_the_token_budget() -> None:
     shot list, pacing, music on the beat, captions, sound design: docs/14); 5200 → 5400 for
     animation (make_character, animate: a cast and its scenes)."""
     text = "\n".join(b["text"] for b in system_blocks(load_builtin_ops()))
-    assert len(text) / 4 < 5800
+    assert len(text) / 4 < 6000
 
 
 def test_final_schema_is_strict_compatible() -> None:
