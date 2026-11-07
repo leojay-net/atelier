@@ -20,6 +20,10 @@ export type TextItem = {
 };
 export type Sound = { id: number; at: number; kind: "whoosh" | "pop" | "riser" | "impact" };
 
+/** The layers (tracks) you can mute or delete one by one. */
+export type Layer = "video" | "text" | "effects" | "voice" | "music";
+const UNMUTED: Record<Layer, boolean> = { video: false, text: false, effects: false, voice: false, music: false };
+
 export const SOUNDS: Sound["kind"][] = ["whoosh", "pop", "riser", "impact"];
 export const RATIO: Record<Exclude<Shape, "original">, number> = {
   portrait: 9 / 16,
@@ -92,6 +96,7 @@ export function useEdit(jobId: string, source: string) {
   const [error, setError] = useState("");
   const { items: uploads, upload } = useUpload();
   const [uploadFor, setUploadFor] = useState<"voice" | "music" | null>(null);
+  const [muted, setMuted] = useState(UNMUTED);
   const [making, setMaking] = useState<"" | "voice" | "music">("");
 
   // another video was picked: start from a clean slate (set during render, the React way)
@@ -109,6 +114,7 @@ export function useEdit(jobId: string, source: string) {
     setVoice(VOICE0);
     setMusic(MUSIC0);
     setSounds([]);
+    setMuted(UNMUTED);
     setError("");
   }
 
@@ -167,22 +173,22 @@ export function useEdit(jobId: string, source: string) {
     const v = video.current;
     if (!v || !audio.current) return;
     const layers = [];
-    if (voice.on && voice.handle)
+    if (voice.on && voice.handle && !muted.voice)
       layers.push({
         url: contentUrl(voice.handle),
         layer: { handle: voice.handle, start: clock(voice.start) ?? 0, volume: voice.volume, loop: false },
       });
-    if (music.on && music.handle)
+    if (music.on && music.handle && !muted.music)
       layers.push({
         url: contentUrl(music.handle),
         layer: { handle: music.handle, start: 0, volume: music.volume, loop: true },
       });
-    const hits = sounds.flatMap((s) => {
+    const hits = (muted.effects ? [] : sounds).flatMap((s) => {
       const at = clock(s.at);
       return at === null ? [] : [{ at, kind: s.kind }];
     });
     void audio.current.start(clock(v.currentTime) ?? 0, layers, hits);
-  }, [voice, music, sounds, clock]);
+  }, [voice, music, sounds, muted, clock]);
 
   // play only the kept parts
   function onTime() {
@@ -222,7 +228,7 @@ export function useEdit(jobId: string, source: string) {
         audio.current = null; // no Web Audio: the picture still plays
       }
     }
-    audio.current?.setVideoVolume(volume);
+    audio.current?.setVideoVolume(muted.video ? 0 : volume);
     void v.play();
     setPlaying(true);
     startSound();
@@ -250,9 +256,10 @@ export function useEdit(jobId: string, source: string) {
   useEffect(() => {
     if (!video.current) return;
     video.current.playbackRate = speed;
-    if (audio.current) audio.current.setVideoVolume(volume);
-    else video.current.volume = Math.min(1, volume);
-  }, [speed, volume]);
+    const level = muted.video ? 0 : volume;
+    if (audio.current) audio.current.setVideoVolume(level);
+    else video.current.volume = Math.min(1, level);
+  }, [speed, volume, muted.video]);
 
   // a change while playing is heard at once
   useEffect(() => {
@@ -356,7 +363,21 @@ export function useEdit(jobId: string, source: string) {
     setSounds((cur) => [...cur, { id: nextId++, at: now, kind }].sort((a, b) => a.at - b.at));
   }
 
+  function toggleMute(k: Layer) {
+    setMuted((m) => ({ ...m, [k]: !m[k] }));
+  }
+  /** Take one layer out of the video altogether (the rest stays as it is). */
+  function removeLayer(k: Layer) {
+    if (k === "text") setTexts([]);
+    else if (k === "effects") setSounds([]);
+    else if (k === "voice") setVoice(VOICE0);
+    else if (k === "music") setMusic(MUSIC0);
+    else setMuted((m) => ({ ...m, video: true }));
+    if (k !== "video") setMuted((m) => ({ ...m, [k]: false }));
+  }
+
   const dirty =
+    muted.video ||
     parts.length > 0 ||
     shape !== "original" ||
     volume !== 1 ||
@@ -380,8 +401,8 @@ export function useEdit(jobId: string, source: string) {
       shape,
       focus_x: focus[0],
       focus_y: focus[1],
-      volume,
-      texts: texts
+      volume: muted.video ? 0 : volume,
+      texts: (muted.text ? [] : texts)
         .filter((t) => t.text.trim())
         .map((t) => ({
           text: t.text.trim(),
@@ -391,7 +412,7 @@ export function useEdit(jobId: string, source: string) {
           style: t.style,
         })),
       voiceover:
-        voice.on && (voice.handle || voice.text.trim())
+        voice.on && !muted.voice && (voice.handle || voice.text.trim())
           ? {
               handle: voice.handle,
               text: voice.handle ? "" : voice.text.trim(),
@@ -401,7 +422,7 @@ export function useEdit(jobId: string, source: string) {
             }
           : null,
       music:
-        music.on && (music.handle || (music.mode === "compose" && music.compose.trim()))
+        music.on && !muted.music && (music.handle || (music.mode === "compose" && music.compose.trim()))
           ? {
               handle: music.handle,
               compose: music.handle ? "" : music.compose.trim(),
@@ -409,7 +430,7 @@ export function useEdit(jobId: string, source: string) {
               loop: true,
             }
           : null,
-      sounds: sounds.map((s) => ({ at: s.at, kind: s.kind })),
+      sounds: (muted.effects ? [] : sounds).map((s) => ({ at: s.at, kind: s.kind })),
     };
     try {
       const r = await fetch(`/api/proxy/jobs/${jobId}/edit`, {
@@ -492,6 +513,9 @@ export function useEdit(jobId: string, source: string) {
     sending,
     upload,
     pickFile,
+    muted,
+    toggleMute,
+    removeLayer,
     making,
     makeSound,
     onTime,

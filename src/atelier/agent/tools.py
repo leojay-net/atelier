@@ -62,6 +62,13 @@ MAX_CHARACTERS = 8  # cast members designed per request
 MAX_ANIMATION_SECONDS = 90  # animated seconds per request (billed per second)
 MAX_MADE = 12  # pictures generated per job (a 30 s reel needs 8-15 shots)
 MAX_MUSIC = 2  # tracks composed per job
+# A scene's line starts this long after the cut, so the picture has a moment to start the
+# performance (the same delayed line times the mouth and is heard, so they stay together).
+LINE_LEAD_MS = 400
+# Music is composed this much longer than asked: the AI sizes it before the scenes' real
+# lengths are known, and a short track left the end of the video silent. It is cut to the
+# video's length and faded out, so the extra is never heard.
+MUSIC_EXTRA_SECONDS = 4
 
 PREVIEW_KINDS = {"thumb": "thumb", "crop": "crop", "compare": "compare", "contact_sheet": "sheet"}
 MEDIA_TYPES = {
@@ -546,7 +553,8 @@ class Toolbox:
                 raw.write_bytes(speak_as(line, talker.voice or "a natural, friendly voice"))
                 spoken = work / "line.mp3"
                 _ffmpeg(
-                    ["-i", str(raw), "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+                    ["-i", str(raw), "-af",
+                     f"adelay={LINE_LEAD_MS}:all=1,loudnorm=I=-16:TP=-1.5:LRA=11",
                      "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", str(spoken)]
                 )  # fmt: skip
                 length = _seconds(spoken)
@@ -700,7 +708,7 @@ class Toolbox:
             return ToolOutcome(f"make_music: at most {MAX_MUSIC} tracks per request", is_error=True)
         seed = int.from_bytes(style.encode()[:4].ljust(4, b"\0"), "big") % 100000
         try:
-            data = self.music.compose(style, seconds, bpm, seed)
+            data = self.music.compose(style, min(180, seconds + MUSIC_EXTRA_SECONDS), bpm, seed)
             info = self.engine.store.put_bytes(data, media=MediaType.AUDIO, ext=".mp3")
         except (MusicError, OSError) as e:
             return ToolOutcome(f"make_music: {e}", is_error=True)
