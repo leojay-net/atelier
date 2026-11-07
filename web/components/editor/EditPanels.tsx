@@ -643,7 +643,11 @@ function FadesAndMore({ edit }: { edit: Edit }) {
         className={field}
         value={edit.background ? edit.background.mode : ""}
         onChange={(e) =>
-          edit.setBackground(e.target.value ? { mode: e.target.value as "blur" | "color", color: edit.background?.color ?? "#00b140" } : null)
+          edit.setBackground(
+            e.target.value
+              ? { mode: e.target.value as "blur" | "color", color: edit.background?.color ?? "#00b140", method: edit.background?.method ?? "model" }
+              : null,
+          )
         }
       >
         <option value="">Keep the background</option>
@@ -656,13 +660,63 @@ function FadesAndMore({ edit }: { edit: Edit }) {
           <input
             type="color"
             value={edit.background.color}
-            onChange={(e) => edit.setBackground({ mode: "color", color: e.target.value })}
+            onChange={(e) => edit.setBackground({ mode: "color", color: e.target.value, method: edit.background?.method ?? "model" })}
             className="h-7 w-10 rounded border border-border bg-transparent"
           />
         </label>
       ) : null}
       {edit.background ? (
-        <p className="text-[12px] text-fg-tertiary">Finds the person or subject in every frame. Clips up to 30 seconds; shown in the full preview.</p>
+        <>
+          <label className="flex items-start gap-2 text-[12px]">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={edit.background.method === "static"}
+              onChange={(e) => edit.setBackground({ ...edit.background!, method: e.target.checked ? "static" : "model" })}
+            />
+            <span>
+              The camera does not move
+              <span className="block text-fg-tertiary">Faster and sharper: what stays the same all the time is the background.</span>
+            </span>
+          </label>
+          <p className="text-[12px] text-fg-tertiary">
+            Finds the subject in every frame. Up to {edit.background.method === "static" ? "2 minutes" : "30 seconds"}; shown in the full preview.
+          </p>
+        </>
+      ) : null}
+      <p className="pt-1 font-medium">Shape of the picture</p>
+      <select
+        aria-label="Picture shape mask"
+        className={field}
+        value={edit.mask?.shape ?? ""}
+        onChange={(e) =>
+          edit.setMask(
+            e.target.value
+              ? { shape: e.target.value as "circle" | "rounded" | "diamond", inset: edit.mask?.inset ?? 0, feather: edit.mask?.feather ?? 0.03, background: edit.mask?.background ?? "color", color: edit.mask?.color ?? "#000000" }
+              : null,
+          )
+        }
+      >
+        <option value="">The whole picture</option>
+        <option value="circle">Circle</option>
+        <option value="rounded">Rounded box</option>
+        <option value="diamond">Diamond</option>
+      </select>
+      {edit.mask ? (
+        <div className="space-y-2">
+          <Slider label={`Smaller ${Math.round(edit.mask.inset * 100)}%`} value={edit.mask.inset} min={0} max={0.6} step={0.02} onChange={(v) => edit.setMask({ ...edit.mask!, inset: v })} />
+          <Slider label={`Soft edge ${Math.round(edit.mask.feather * 100)}%`} value={edit.mask.feather} min={0} max={0.3} step={0.01} onChange={(v) => edit.setMask({ ...edit.mask!, feather: v })} />
+          <label className="flex items-center justify-between gap-2 text-[12px]">
+            Outside the shape
+            <select className={field} value={edit.mask.background} onChange={(e) => edit.setMask({ ...edit.mask!, background: e.target.value as "color" | "blur" })}>
+              <option value="color">A colour</option>
+              <option value="blur">The picture, blurred</option>
+            </select>
+          </label>
+          {edit.mask.background === "color" ? (
+            <input type="color" value={edit.mask.color} onChange={(e) => edit.setMask({ ...edit.mask!, color: e.target.value })} className="h-7 w-10 rounded border border-border bg-transparent" />
+          ) : null}
+        </div>
       ) : null}
       <p className="pt-1 font-medium">Green screen</p>
       {edit.green ? (
@@ -875,6 +929,19 @@ export function StickersPanel({ edit }: { edit: Edit }) {
               ))}
             </select>
           </label>
+          {o.end !== null && !o.video ? (
+            <>
+              <Slider
+                label={`Grows or shrinks to ${Math.round((o.scaleTo ?? o.scale) * 100)}%`}
+                value={o.scaleTo ?? o.scale}
+                min={0.05}
+                max={1}
+                step={0.01}
+                onChange={(v) => patch(o.id, { scaleTo: Math.abs(v - o.scale) < 0.015 ? null : v })}
+              />
+              <Slider label={`Spins ${Math.round(o.spin ?? 0)}°`} value={o.spin ?? 0} min={-720} max={720} step={15} onChange={(v) => patch(o.id, { spin: v })} />
+            </>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-mono text-fg-tertiary">
               {fmt(o.start)}–{o.end === null ? "end" : fmt(o.end)}

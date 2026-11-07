@@ -34,6 +34,11 @@ SMOOTH = 0.6  # how much of the new mask (the rest is the previous one): steadie
 
 
 class RemoveVideoBackgroundParams(Params):
+    method: Literal["model", "static"] = Field(
+        "model",
+        description="model: find the subject with a small neural network; static: a camera that "
+        "does not move: whatever is not in the same place all the time is the subject (no model)",
+    )
     background: Literal["color", "blur"] = Field(
         "color", description="color: a plain colour; blur: the original picture, blurred"
     )
@@ -45,6 +50,31 @@ class RemoveVideoBackgroundParams(Params):
 
 def _hex(color: str) -> tuple[int, int, int]:
     return int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+
+
+def _still_background(src: Artifact, width: int, height: int, fps: float) -> np.ndarray:
+    """The empty scene of a locked-off shot: the per-pixel median of frames sampled through the
+    clip, at a quarter of the size (a mask does not need more). Whatever moves is not in it."""
+    w, h = max(2, width // 4 // 2 * 2), max(2, height // 4 // 2 * 2)
+    done = subprocess.run(
+        [find("ffmpeg"), "-v", "error", "-nostdin", "-i", str(src.path), "-map", "0:v:0",
+         "-vf", f"fps=3,scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True, timeout=600, check=False,
+    )  # fmt: skip
+    size = w * h * 3
+    n = len(done.stdout) // size
+    if n < 3:
+        raise OpError("the clip is too short to tell the scene from the subject")
+    stack = np.frombuffer(done.stdout[: n * size], dtype=np.uint8).reshape(n, h, w, 3)
+    return np.median(stack, axis=0).astype(np.uint8)
+
+
+def _static_mask(small: np.ndarray, background: np.ndarray, width: int, height: int) -> Image.Image:
+    diff = np.abs(small.astype(np.int16) - background.astype(np.int16)).max(axis=2)
+    on = (diff > 28).astype(np.uint8) * 255
+    mask = Image.fromarray(on, "L").filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    mask = mask.filter(ImageFilter.GaussianBlur(2))
+    return mask.resize((width, height), Image.Resampling.BILINEAR)
 
 
 def _run(src: Artifact, out: Any, p: RemoveVideoBackgroundParams, *, width: int, height: int,
@@ -78,6 +108,8 @@ def _run(src: Artifact, out: Any, p: RemoveVideoBackgroundParams, *, width: int,
     flat[:] = _hex(p.color)
     frames = 0
     prev: np.ndarray | None = None
+    still = _still_background(src, width, height, fps) if p.method == "static" else None
+    sw, sh = (still.shape[1], still.shape[0]) if still is not None else (0, 0)
     with decode_err.open("wb") as derr, encode_err.open("wb") as eerr:
         decode = subprocess.Popen(decode_argv, stdout=subprocess.PIPE, stderr=derr, stdin=subprocess.DEVNULL, env=env)  # fmt: skip
         encode = subprocess.Popen(encode_argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=eerr, env=env)  # fmt: skip
@@ -91,7 +123,10 @@ def _run(src: Artifact, out: Any, p: RemoveVideoBackgroundParams, *, width: int,
                     break
                 frame = np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3)
                 image = Image.fromarray(frame, "RGB")
-                mask = subject_mask(image)
+                if still is not None:
+                    mask = _static_mask(np.asarray(image.resize((sw, sh), Image.Resampling.BILINEAR)), still, width, height)
+                else:
+                    mask = subject_mask(image)
                 if p.feather > 0:
                     mask = mask.filter(ImageFilter.GaussianBlur(p.feather * max(width, height) / 100))
                 m = np.asarray(mask, dtype=np.float32) / 255.0
@@ -155,7 +190,7 @@ def remove_video_background(
     v = meta.get("video")
     if not v:
         raise OpError("this file has no video stream")
-    if float(meta.get("duration") or 0) > MATTE_MAX_SECONDS:
+    if float(meta.get("duration") or 0) > (120.0 if p.method == "static" else MATTE_MAX_SECONDS):
         raise OpError(f"background removal is limited to {MATTE_MAX_SECONDS:g}s clips: trim it first")
     fps = float(v.get("fps") or 30.0)
     dw, dh = v["display"]

@@ -564,3 +564,75 @@ def test_the_beats_of_a_click_track_come_back_as_json(tmp_path: Path) -> None:
     res = api.get(f"/assets/{handle}/beats")
     assert res.status_code == 200, res.content
     assert res.json()["bpm"] == pytest.approx(120, abs=2)
+
+
+def test_a_still_scene_is_swapped_without_any_model(tmp_path: Path) -> None:
+    video = tmp_path / "m.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+         "gradients=s=320x180:d=6:r=25:c0=blue:c1=green:speed=0", "-f", "lavfi", "-i",
+         "color=white:s=50x70:d=6:r=25", "-filter_complex", "[0][1]overlay=x=20+40*t:y=60",
+         "-pix_fmt", "yuv420p", str(video)],
+        check=True,
+    )  # fmt: skip
+    engine = Engine.open(tmp_path / "store")
+    handle = engine.store.put_file(video).handle
+    spec = {
+        "version": 1, "inputs": {"v": handle},
+        "steps": [
+            {"id": "b", "op": "video.remove_background", "in": ["v"],
+             "args": {"method": "static", "background": "color", "color": "#ff0000"}},
+            {"id": "out", "op": "export", "in": ["b"], "args": {"preset": "web_h264"}},
+        ],
+        "outputs": ["out"],
+    }  # fmt: skip
+    out = engine.store.path(engine.run(spec).outputs["out"].hash)
+    frame = tmp_path / "f.rgb"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "4", "-i", str(out), "-frames:v", "1",
+                    "-f", "rawvideo", "-pix_fmt", "rgb24", str(frame)], check=True)  # fmt: skip
+    raw = frame.read_bytes()
+
+    def px(x: int, y: int) -> tuple[int, ...]:
+        i = (y * 320 + x) * 3
+        return tuple(raw[i : i + 3])
+
+    assert px(5, 5)[0] > 200 and px(5, 5)[1] < 40  # the empty scene became red
+    assert min(px(20 + 160 + 25, 95)) > 200  # the moving box (white) was kept
+
+
+def test_a_mask_keeps_only_its_shape(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    for shape in ("circle", "rounded", "diamond"):
+        for background in ("color", "blur"):
+            edit = EditIn(source=clip, mask={"shape": shape, "background": background, "color": "#ff0000"})
+            spec = build_spec(edit, 4.0)
+            assert "video.mask" in [s["op"] for s in spec["steps"]]
+            out = engine.store.path(engine.run(spec).outputs["out"].hash)
+            assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)
+    frame = tmp_path / "m.rgb"
+    edit = EditIn(source=clip, mask={"shape": "circle", "background": "color", "color": "#ff0000"})
+    out = engine.store.path(engine.run(build_spec(edit, 4.0)).outputs["out"].hash)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "1", "-i", str(out), "-frames:v", "1",
+                    "-f", "rawvideo", "-pix_fmt", "rgb24", str(frame)], check=True)  # fmt: skip
+    raw = frame.read_bytes()
+    w = int(next(s for s in probe(out)["streams"] if s["codec_type"] == "video")["width"])
+    corner = raw[0:3]
+    assert corner[0] > 200 and corner[1] < 60  # outside the circle: the colour
+    assert w > 0
+
+
+def test_a_sticker_can_grow_spin_and_glide(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    logo = engine.store.put_file(FIXTURES / "logo.png").handle
+    edit = EditIn(
+        source=clip,
+        overlays=[{"handle": logo, "anchor": "top_left", "move_to": "bottom_right", "scale": 0.1,
+                   "scale_to": 0.4, "spin": 360, "fade": 0.4, "start": 0.5, "end": 3.5}],
+    )  # fmt: skip
+    spec = build_spec(edit, 4.0, overlay_handles=[logo], overlay_media=["image"])
+    args = next(s for s in spec["steps"] if s["op"] == "video.overlay")["args"]
+    assert args["scale_to"] == 0.4 and args["spin"] == 360
+    out = engine.store.path(engine.run(spec).outputs["out"].hash)
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)

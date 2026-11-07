@@ -64,6 +64,8 @@ export type Overlay = {
   /** A video picture-in-picture instead of a still picture. */
   video?: boolean;
   sound?: boolean;
+  scaleTo?: number | null;
+  spin?: number;
 };
 export const TRANSITIONS = ["fade", "dissolve", "wipeleft", "wiperight", "slideleft", "slideright", "circlecrop", "fadeblack", "fadewhite"] as const;
 export type Transition = (typeof TRANSITIONS)[number];
@@ -162,7 +164,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [denoise, setDenoise] = useState(false);
   const [loudnorm, setLoudnorm] = useState(false);
   const [stabilize, setStabilize] = useState(false);
-  const [background, setBackground] = useState<{ mode: "blur" | "color"; color: string } | null>(null);
+  const [background, setBackground] = useState<{ mode: "blur" | "color"; color: string; method: "model" | "static" } | null>(null);
+  const [mask, setMask] = useState<{ shape: "circle" | "rounded" | "diamond"; inset: number; feather: number; background: "color" | "blur"; color: string } | null>(null);
   const [green, setGreen] = useState<{ handle: string; name: string; color: string; similarity: number } | null>(null);
   const [clips, setClips] = useState<Clip[]>([]);
   const [cutting, setCutting] = useState<number | null>(null);
@@ -200,6 +203,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setStabilize(false);
     setClips([]);
     setBackground(null);
+    setMask(null);
     setGreen(null);
     setBpm(0);
     setBeatOffset(0);
@@ -572,6 +576,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     loudnorm ||
     stabilize ||
     background !== null ||
+    mask !== null ||
     green !== null ||
     kept.some((p) => (p.speed ?? 1) !== 1 || p.reverse || (p.hold ?? 0) > 0) ||
     clips.length > 0 ||
@@ -655,6 +660,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
         ...(o.end !== null && o.fade ? { fade: o.fade } : {}),
         ...(o.blend && o.blend !== "normal" ? { blend: o.blend } : {}),
         ...(o.sound ? { sound: true } : {}),
+        ...(o.end !== null && o.scaleTo ? { scale_to: o.scaleTo } : {}),
+        ...(o.end !== null && o.spin ? { spin: o.spin } : {}),
       })),
       append: clips.map((c) => ({
         handle: c.handle,
@@ -665,6 +672,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       loudnorm,
       stabilize,
       ...(background ? { background } : {}),
+      ...(mask ? { mask } : {}),
       ...(green ? { green_screen: { handle: green.handle, color: green.color, similarity: green.similarity } } : {}),
     };
   }
@@ -711,7 +719,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   // -- undo / redo: a snapshot of everything you can set, taken a moment after each change ----
   const doc = {
     parts, shape, focus, volume, speed, texts, voice, music, sounds, muted, adjust, filter,
-    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips, background, green,
+    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips, background, green, mask,
   };
   const sig = JSON.stringify(doc);
   const history = useRef<{ source: string; stack: string[]; at: number }>({ source: "", stack: [], at: -1 });
@@ -815,6 +823,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setStabilize(d.stabilize);
     setClips(d.clips ?? []);
     setBackground(d.background ?? null);
+    setMask(d.mask ?? null);
     setGreen(d.green ?? null);
   }
   function undo() {
@@ -1011,6 +1020,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     splitLayers,
     background,
     setBackground,
+    mask,
+    setMask,
     green,
     setGreen,
     addEmoji,
