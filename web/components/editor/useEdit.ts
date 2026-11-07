@@ -31,7 +31,49 @@ export type TextItem = {
   color?: string;
   animate?: "auto" | "none" | "rise" | "pop";
 };
-export type Adjust = { brightness: number; contrast: number; saturation: number; gamma: number };
+export type Adjust = {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  gamma: number;
+  /** an animated look: where each value ends up at `end` (it starts at the value above) */
+  to_brightness?: number;
+  to_contrast?: number;
+  to_saturation?: number;
+  to_gamma?: number;
+  start?: number;
+  end?: number;
+};
+export type MaskState = {
+  shape: "circle" | "rounded" | "diamond" | "polygon";
+  points?: [number, number][];
+  inset: number;
+  feather: number;
+  background: "color" | "blur";
+  color: string;
+};
+export type ZoomState = { keys: [number, number][]; focus_x: number; focus_y: number };
+/** The look at one moment of an animated look (the plain look when it is not animated). */
+export function lookAt(a: Adjust, t: number) {
+  const k = a.end !== undefined && a.end > (a.start ?? 0) ? Math.max(0, Math.min(1, (t - (a.start ?? 0)) / (a.end - (a.start ?? 0)))) : 0;
+  const mix = (v: number, to?: number) => (to === undefined ? v : v + (to - v) * k);
+  return {
+    brightness: mix(a.brightness, a.to_brightness),
+    contrast: mix(a.contrast, a.to_contrast),
+    saturation: mix(a.saturation, a.to_saturation),
+  };
+}
+/** The zoom at one moment (straight lines between keyframes, held before the first and after the last). */
+export function zoomAt(z: ZoomState | null, t: number) {
+  if (!z) return 1;
+  let v = z.keys[0]![1];
+  for (let i = 1; i < z.keys.length; i++) {
+    const [t0, z0] = z.keys[i - 1]!;
+    const [t1, z1] = z.keys[i]!;
+    v += (z1 - z0) * Math.max(0, Math.min(1, (t - t0) / Math.max(0.001, t1 - t0)));
+  }
+  return v;
+}
 export const NEUTRAL: Adjust = { brightness: 0, contrast: 1, saturation: 1, gamma: 1 };
 /** Named looks: just sets of the four numbers, so the AI and the editor share them. */
 export const FILTERS: { key: string; label: string; adjust: Adjust }[] = [
@@ -165,7 +207,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [loudnorm, setLoudnorm] = useState(false);
   const [stabilize, setStabilize] = useState(false);
   const [background, setBackground] = useState<{ mode: "blur" | "color"; color: string; method: "model" | "static" } | null>(null);
-  const [mask, setMask] = useState<{ shape: "circle" | "rounded" | "diamond"; inset: number; feather: number; background: "color" | "blur"; color: string } | null>(null);
+  const [mask, setMask] = useState<MaskState | null>(null);
+  const [zoom, setZoom] = useState<ZoomState | null>(null);
+  const [mainAt, setMainAt] = useState(0);
   const [green, setGreen] = useState<{ handle: string; name: string; color: string; similarity: number } | null>(null);
   const [clips, setClips] = useState<Clip[]>([]);
   const [cutting, setCutting] = useState<number | null>(null);
@@ -204,6 +248,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setClips([]);
     setBackground(null);
     setMask(null);
+    setZoom(null);
+    setMainAt(0);
     setGreen(null);
     setBpm(0);
     setBeatOffset(0);
@@ -564,6 +610,16 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     if (k !== "video") setMuted((m) => ({ ...m, [k]: false }));
   }
 
+  function moveClip(i: number, by: -1 | 1) {
+    const j = i + by;
+    if (j < 0 || j >= clips.length) return;
+    setClips((cur) => {
+      const next = [...cur];
+      [next[i], next[j]] = [next[j]!, next[i]!];
+      return next;
+    });
+  }
+
   const looks = JSON.stringify(adjust) !== JSON.stringify(NEUTRAL);
   const dirty =
     looks ||
@@ -577,6 +633,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     stabilize ||
     background !== null ||
     mask !== null ||
+    zoom !== null ||
+    mainAt > 0 ||
     green !== null ||
     kept.some((p) => (p.speed ?? 1) !== 1 || p.reverse || (p.hold ?? 0) > 0) ||
     clips.length > 0 ||
@@ -672,7 +730,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       loudnorm,
       stabilize,
       ...(background ? { background } : {}),
-      ...(mask ? { mask } : {}),
+      ...(mask ? { mask: { ...mask, ...(mask.shape === "polygon" ? {} : { points: undefined }) } } : {}),
+      ...(zoom ? { zoom } : {}),
+      ...(clips.length > 0 && mainAt > 0 ? { main_at: Math.min(mainAt, clips.length) } : {}),
       ...(green ? { green_screen: { handle: green.handle, color: green.color, similarity: green.similarity } } : {}),
     };
   }
@@ -719,7 +779,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   // -- undo / redo: a snapshot of everything you can set, taken a moment after each change ----
   const doc = {
     parts, shape, focus, volume, speed, texts, voice, music, sounds, muted, adjust, filter,
-    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips, background, green, mask,
+    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips, background, green, mask, zoom, mainAt,
   };
   const sig = JSON.stringify(doc);
   const history = useRef<{ source: string; stack: string[]; at: number }>({ source: "", stack: [], at: -1 });
@@ -758,6 +818,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     background !== null ||
     green !== null ||
     clips.length > 0 ||
+    (adjust.end !== undefined && adjust.end > 0) ||
     (voice.on && Boolean(voice.effect)) ||
     overlays.some((o) => o.video) ||
     kept.some((p) => p.reverse || (p.hold ?? 0) > 0) ||
@@ -824,6 +885,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setClips(d.clips ?? []);
     setBackground(d.background ?? null);
     setMask(d.mask ?? null);
+    setZoom(d.zoom ?? null);
+    setMainAt(d.mainAt ?? 0);
     setGreen(d.green ?? null);
   }
   function undo() {
@@ -876,6 +939,14 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       setNatural([el.videoWidth || 16, el.videoHeight || 9]);
     }
   }, []);
+  /** Paint the picture on screen right now onto a canvas (for drawing a mask over it). */
+  function drawFrame(c: HTMLCanvasElement) {
+    const v = video.current;
+    if (!v || !v.videoWidth) return;
+    c.width = 320;
+    c.height = Math.round((320 * v.videoHeight) / v.videoWidth);
+    c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height);
+  }
   const barRef = useCallback((el: HTMLDivElement | null) => {
     bar.current = el;
   }, []);
@@ -931,6 +1002,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   return {
     source,
     videoRef,
+    drawFrame,
     barRef,
     fileRef,
     duration,
@@ -1022,6 +1094,11 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setBackground,
     mask,
     setMask,
+    zoom,
+    setZoom,
+    mainAt,
+    setMainAt,
+    moveClip,
     green,
     setGreen,
     addEmoji,

@@ -43,10 +43,43 @@ class Adjust(BaseModel):
     contrast: float = Field(1.0, ge=0, le=3)
     saturation: float = Field(1.0, ge=0, le=3)
     gamma: float = Field(1.0, ge=0.1, le=3)
+    # an animated look: each of these is where the value ends up at `end` (it starts at the value above)
+    to_brightness: float | None = Field(None, ge=-1, le=1)
+    to_contrast: float | None = Field(None, ge=0, le=3)
+    to_saturation: float | None = Field(None, ge=0, le=3)
+    to_gamma: float | None = Field(None, ge=0.1, le=3)
+    start: float = Field(0.0, ge=0)
+    end: float | None = Field(None, gt=0)
+
+    @property
+    def animated(self) -> bool:
+        return self.end is not None and any(
+            v is not None
+            for v in (self.to_brightness, self.to_contrast, self.to_saturation, self.to_gamma)
+        )
 
     @property
     def neutral(self) -> bool:
-        return (self.brightness, self.contrast, self.saturation, self.gamma) == (0, 1, 1, 1)
+        return not self.animated and (
+            (self.brightness, self.contrast, self.saturation, self.gamma) == (0, 1, 1, 1)
+        )
+
+    def look(self) -> dict[str, float]:
+        """The arguments of video.color (the animation only when it has an end)."""
+        out = self.model_dump(exclude_none=True)
+        if not self.animated:
+            for k in ("to_brightness", "to_contrast", "to_saturation", "to_gamma", "start", "end"):
+                out.pop(k, None)
+        return out
+
+
+class ZoomItem(BaseModel):
+    """A zoom through keyframes (a push in, a pull out, a pulse)."""
+
+    model_config = ConfigDict(extra="forbid")
+    keys: list[tuple[float, float]] = Field(min_length=2, max_length=16)  # [seconds, zoom 1..4]
+    focus_x: float = Field(0.5, ge=0, le=1)
+    focus_y: float = Field(0.5, ge=0, le=1)
 
 
 class CaptionsItem(BaseModel):
@@ -89,7 +122,8 @@ class MaskItem(BaseModel):
     """Show only a shape of the picture (the rest is a colour or a blur)."""
 
     model_config = ConfigDict(extra="forbid")
-    shape: Literal["circle", "rounded", "diamond"] = "circle"
+    shape: Literal["circle", "rounded", "diamond", "polygon"] = "circle"
+    points: list[tuple[float, float]] | None = Field(None, min_length=3, max_length=64)  # drawn
     inset: float = Field(0.0, ge=0, le=0.6)
     feather: float = Field(0.03, ge=0, le=0.5)
     background: Literal["color", "blur"] = "color"
@@ -175,6 +209,8 @@ class EditIn(BaseModel):
     background: BackgroundItem | None = None
     green_screen: GreenScreenItem | None = None
     mask: MaskItem | None = None
+    zoom: ZoomItem | None = None
+    main_at: int = Field(0, ge=0, le=8)  # where this video sits among the appended ones
     denoise: bool = False  # reduce noise in the video's own sound
     loudnorm: bool = False  # even out the final loudness (-14 LUFS)
     stabilize: bool = False
@@ -333,7 +369,11 @@ def describe(edit: EditIn, parts: list[tuple[float, float]], duration: float) ->
     if edit.green_screen:
         done.append("green screen swapped")
     if edit.mask:
-        done.append(f"a {edit.mask.shape} mask")
+        done.append("a drawn mask" if edit.mask.shape == "polygon" else f"a {edit.mask.shape} mask")
+    if edit.zoom:
+        done.append("a zoom")
+    if edit.append and edit.main_at:
+        done.append("clips reordered")
     if edit.voiceover and edit.voiceover.effect:
         done.append(f"a {edit.voiceover.effect} voice")
     if edit.append:
@@ -432,7 +472,9 @@ def build_spec(
             {"background": edit.background.mode, "color": edit.background.color,
              "method": edit.background.method})  # fmt: skip
     if edit.mask:
-        add("video.mask", edit.mask.model_dump())
+        add("video.mask", edit.mask.model_dump(exclude_none=True))
+    if edit.zoom:
+        add("video.zoom", edit.zoom.model_dump())
     if edit.green_screen and green_handle:
         inputs["gs"] = green_handle
         add("video.chromakey", {"color": edit.green_screen.color,
@@ -444,9 +486,9 @@ def build_spec(
              "focus_x": edit.focus_x, "focus_y": edit.focus_y},
         )  # fmt: skip
     if not edit.adjust.neutral:
-        add("video.color", edit.adjust.model_dump())
+        add("video.color", edit.adjust.look())
     if edit.append and append_handles:
-        pieces = [last]
+        pieces: list[str] = []
         for i, item in enumerate(edit.append[: len(append_handles)]):
             inputs[f"ap{i}"] = append_handles[i]
             piece = f"ap{i}"
@@ -457,6 +499,7 @@ def build_spec(
                 steps.append({"id": f"at{i}", "op": "video.trim", "in": piece, "args": trim})
                 piece = f"at{i}"
             pieces.append(piece)
+        pieces.insert(min(edit.main_at, len(pieces)), last)
         steps.append({"id": "appended", "op": "video.concat", "in": pieces, "args": {"mode": "fill"}})
         last = "appended"
     if edit.captions:

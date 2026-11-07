@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { Film, Loader2, Maximize2, X } from "lucide-react";
 import { contentUrl } from "@/components/media/MediaPreview";
-import { RATIO, TOP, type Edit } from "./useEdit";
+import { RATIO, TOP, lookAt, zoomAt, type Edit } from "./useEdit";
 
 /** The picture: the video fitted into the space it has (keeping its shape, or the chosen one),
  * with the hand-made texts drawn on top. Hand edits show here live. */
@@ -43,13 +43,15 @@ export function EditPlayer({ edit }: { edit: Edit }) {
     area[0] / Math.max(1, area[1]) > ratio
       ? [area[1] * ratio, area[1]]
       : [area[0], area[0] / ratio];
-  const a = edit.adjust;
-  const lookCss =
-    edit.filter === "none"
-      ? undefined
-      : `brightness(${1 + a.brightness}) contrast(${a.contrast}) saturate(${a.saturation})`;
   const stickers = edit.muted.stickers ? [] : edit.overlays.filter((o) => now >= o.start && (o.end === null || now < o.end));
   const at = edit.clock(now) ?? 0;
+  const a = lookAt(edit.adjust, at);
+  const animatedLook = edit.adjust.end !== undefined;
+  const lookCss =
+    edit.filter === "none" && !animatedLook
+      ? undefined
+      : `brightness(${1 + a.brightness}) contrast(${a.contrast}) saturate(${a.saturation})`;
+  const zoomNow = zoomAt(edit.zoom, at);
   const fade = Math.min(
     edit.fadeIn > 0 ? at / edit.fadeIn : 1,
     edit.fadeOut > 0 ? (edit.length - at) / edit.fadeOut : 1,
@@ -59,7 +61,11 @@ export function EditPlayer({ edit }: { edit: Edit }) {
   const inset = m ? `${m.inset * 50}%` : "0%";
   const maskPath = !m
     ? undefined
-    : m.shape === "circle"
+    : m.shape === "polygon"
+      ? m.points && m.points.length >= 3
+        ? `polygon(${m.points.map(([x, y]) => `${x * 100}% ${y * 100}%`).join(", ")})`
+        : undefined
+      : m.shape === "circle"
       ? `circle(${(1 - m.inset) * 50}cqmin at 50% 50%)`
       : m.shape === "rounded"
         ? `inset(${inset} round 15%)`
@@ -140,6 +146,9 @@ export function EditPlayer({ edit }: { edit: Edit }) {
             filter: lookCss,
             opacity: Math.max(0, Math.min(1, fade)),
             clipPath: maskPath,
+            ...(edit.zoom
+              ? { transform: `scale(${zoomNow})`, transformOrigin: `${edit.zoom.focus_x * 100}% ${edit.zoom.focus_y * 100}%` }
+              : {}),
           }}
         />
         {stickers.map((o) => {
