@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from atelier.agent.tools import MUSIC_EXTRA_SECONDS
 from test_api import make_org
 
 from atelier.agent.budget import Budget
@@ -128,7 +129,8 @@ def test_make_music_stores_a_track_and_says_how_long_a_beat_is(tmp_path: Path) -
     out = box.dispatch("make_music", {"style": "warm lofi pop", "seconds": 12, "bpm": 100})
     assert not out.is_error, out.content
     assert "100 bpm" in str(out.content) and "one beat 0.600s" in str(out.content)
-    assert fake.calls[0][:3] == ("warm lofi pop", 12, 100)
+    # composed a few seconds longer than asked, so it always covers the video
+    assert fake.calls[0][:3] == ("warm lofi pop", 12 + MUSIC_EXTRA_SECONDS, 100)
     assert box.generated[0][1] == "music.mp3"
     assert box.dispatch("make_music", {"style": "x", "seconds": 5, "bpm": 100}).is_error
     assert box.dispatch("make_music", {"style": "x", "seconds": 20, "bpm": 300}).is_error

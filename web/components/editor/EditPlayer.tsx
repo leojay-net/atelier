@@ -43,7 +43,7 @@ export function EditPlayer({ edit }: { edit: Edit }) {
     area[0] / Math.max(1, area[1]) > ratio
       ? [area[1] * ratio, area[1]]
       : [area[0], area[0] / ratio];
-  const shown = texts.filter((t) => now >= t.start && now < t.end);
+  const shown = (edit.muted.text ? [] : texts).filter((t) => now >= t.start && now < t.end);
 
   return (
     <div ref={root} className="group/player relative flex min-h-0 min-w-0 flex-1 bg-[var(--ws-canvas)] [&:fullscreen]:bg-black">

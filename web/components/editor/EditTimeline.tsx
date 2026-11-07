@@ -2,9 +2,12 @@
 
 /* eslint-disable react-hooks/refs -- `edit` is one object from useEdit; its functions read refs only in event handlers, which the rule can't see through */
 
+
 import { useRef } from "react";
 import clsx from "clsx";
 import {
+  Eye,
+  EyeOff,
   ChevronsLeft,
   ChevronsRight,
   Pause,
@@ -12,8 +15,11 @@ import {
   Scissors,
   Trash2,
   Undo2,
+  Volume2,
+  VolumeX,
+  Plus,
 } from "lucide-react";
-import { fmt, type Edit } from "./useEdit";
+import { fmt, type Edit, type Layer } from "./useEdit";
 
 function Tool({
   label,
@@ -79,12 +85,15 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
     dragging.current = false;
   }
 
-  const tracks: { key: string; label: string; show: boolean }[] = [
-    { key: "video", label: "Video", show: true },
-    { key: "text", label: "Text", show: true },
-    { key: "voice", label: "Voice", show: true },
-    { key: "music", label: "Music", show: true },
+  // one row per layer; each can be muted (or hidden) and taken out on its own
+  const rows: { key: Layer; label: string; has: boolean; sound: boolean; add?: () => void }[] = [
+    { key: "video", label: "Video", has: true, sound: true },
+    { key: "text", label: "Text", has: texts.length > 0, sound: false },
+    { key: "effects", label: "Effects", has: sounds.length > 0, sound: true },
+    { key: "voice", label: "Voice", has: voice.on && Boolean(voice.handle || voice.text), sound: true, add: () => edit.pickFile("voice") },
+    { key: "music", label: "Music", has: music.on && Boolean(music.handle || music.compose), sound: true, add: () => edit.pickFile("music") },
   ];
+  const off = (k: Layer) => edit.muted[k];
 
   return (
     <div data-tour="timeline" className="@container shrink-0 border-t border-border bg-bg">
@@ -124,10 +133,57 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
       </div>
 
       <div className="flex">
-        <div className="w-16 shrink-0 space-y-1.5 py-2 pl-3 pr-1">
-          {tracks.map((t) => (
-            <div key={t.key} className="flex h-8 items-center text-[11px] text-fg-tertiary">
-              {t.label}
+        <div className="w-[104px] shrink-0 space-y-1.5 py-2 pl-3 pr-1">
+          {rows.map((r) => (
+            <div key={r.key} className="group/row flex h-8 items-center gap-0.5 text-[11px] text-fg-tertiary">
+              <span className={clsx("w-11 truncate", off(r.key) && "line-through opacity-60")}>{r.label}</span>
+              {r.has || r.key === "video" ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    onClick={() => edit.toggleMute(r.key)}
+                    title={
+                      r.key === "video"
+                        ? off(r.key) ? "Turn the video's own sound back on" : "Mute the video's own sound"
+                        : r.sound
+                          ? off(r.key) ? "Unmute" : "Mute"
+                          : off(r.key) ? "Show" : "Hide"
+                    }
+                    aria-label={`${off(r.key) ? "Unmute" : "Mute"} ${r.label}`}
+                    aria-pressed={off(r.key)}
+                    className={clsx(
+                      "grid h-6 w-6 place-items-center rounded transition-colors hover:bg-bg-inset hover:text-fg disabled:opacity-35",
+                      off(r.key) && "text-status-failed",
+                    )}
+                  >
+                    {r.sound ? off(r.key) ? <VolumeX size={13} /> : <Volume2 size={13} /> : off(r.key) ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                  {r.key !== "video" ? (
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => edit.removeLayer(r.key)}
+                      title={`Remove the ${r.label.toLowerCase()} layer`}
+                      aria-label={`Remove ${r.label}`}
+                      className="grid h-6 w-6 place-items-center rounded opacity-0 transition hover:bg-bg-inset hover:text-status-failed focus:opacity-100 group-hover/row:opacity-100 disabled:opacity-0"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  ) : null}
+                </>
+              ) : r.add ? (
+                <button
+                  type="button"
+                  disabled={locked}
+                  onClick={r.add}
+                  title={`Add your own ${r.key === "voice" ? "recording" : "song"}`}
+                  aria-label={`Add ${r.label}`}
+                  className="grid h-6 w-6 place-items-center rounded hover:bg-bg-inset hover:text-fg disabled:opacity-35"
+                >
+                  <Plus size={13} />
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
@@ -146,7 +202,7 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
           )}
         >
           {/* video: the kept parts, with the cut gaps between them */}
-          <div className="relative h-8 rounded bg-[var(--ws-track)]">
+          <div className={clsx("relative h-8 rounded bg-[var(--ws-track)]", off("video") && "opacity-60")}>
             {kept.map((p, i) => (
               <div
                 key={i}
@@ -168,7 +224,7 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
             ))}
           </div>
           {/* text */}
-          <div className="relative h-8 rounded bg-[var(--ws-track)]">
+          <div className={clsx("relative h-8 rounded bg-[var(--ws-track)]", off("text") && "opacity-40")}>
             {texts.map((t) => (
               <div
                 key={t.id}
@@ -197,6 +253,9 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
                 />
               </div>
             ))}
+          </div>
+          {/* sound effects */}
+          <div className={clsx("relative h-8 rounded bg-[var(--ws-track)]", off("effects") && "opacity-40")}>
             {sounds.map((s) => (
               <div
                 key={s.id}
@@ -207,7 +266,7 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
             ))}
           </div>
           {/* voiceover */}
-          <div className="relative h-8 rounded bg-[var(--ws-track)]">
+          <div className={clsx("relative h-8 rounded bg-[var(--ws-track)]", off("voice") && "opacity-40")}>
             {voice.on && (voice.handle || voice.text) ? (
               <div
                 className="absolute inset-y-1 overflow-hidden whitespace-nowrap rounded bg-[var(--ws-voice)] px-1.5 text-[11px] leading-6 text-white/90"
@@ -227,7 +286,7 @@ export function EditTimeline({ edit, locked }: { edit: Edit; locked: boolean }) 
             ) : null}
           </div>
           {/* music */}
-          <div className="relative h-8 rounded bg-[var(--ws-track)]">
+          <div className={clsx("relative h-8 rounded bg-[var(--ws-track)]", off("music") && "opacity-40")}>
             {music.on && (music.handle || music.compose) ? (
               <div className="absolute inset-y-1 left-0 right-0 overflow-hidden whitespace-nowrap rounded bg-[var(--ws-music)] px-1.5 text-[11px] leading-6 text-white/90">
                 ♪ {music.mode === "compose" ? music.compose || "Music" : music.name || "My song"}
