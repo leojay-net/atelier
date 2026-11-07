@@ -50,6 +50,7 @@ BUILTIN_MODULES = (
     "atelier.ml.segment",
     "atelier.ml.speech",
     "atelier.ml.faces",
+    "atelier.ml.matting",
     "atelier.ml.upscale",
 )
 

@@ -508,3 +508,45 @@ def test_a_picture_can_be_cut_out_for_a_sticker() -> None:
         (out,) = job["result"]["outputs"].values()
         assert out["ext"] == ".png"
     assert api.post(f"/assets/{api.upload('a.wav', TONE.read_bytes()).json()['handle']}/cutout", {}).status_code == 422
+
+
+def test_the_tempo_of_a_click_track_is_found() -> None:
+    from atelier.av import beats
+
+    rate = beats.RATE
+    pcm = np.zeros(rate * 12, dtype=np.float32)
+    period = rate * 60 / 124  # 124 beats a minute
+    for i in range(int(12 * 124 / 60)):
+        start = int(0.3 * rate + i * period)
+        pcm[start : start + 200] = np.sin(np.linspace(0, 60, 200)) * np.linspace(1, 0, 200)
+    found = beats.analyse(pcm)
+    assert found["bpm"] == pytest.approx(124, abs=2)
+    assert found["offset"] == pytest.approx(0.3, abs=0.06)
+    assert beats.analyse(np.zeros(rate * 10, dtype=np.float32))["bpm"] == 0
+
+
+def test_the_beats_of_an_uploaded_sound_can_be_fetched() -> None:
+    _, api = make_org("acme")
+    tone = api.upload("a.wav", TONE.read_bytes()).json()["handle"]
+    res = api.get(f"/assets/{tone}/beats")
+    assert res.status_code == 200 and set(res.json()) == {"bpm", "offset", "beats"}
+    photo = api.upload("p.jpg", (FIXTURES / "photo.jpg").read_bytes()).json()["handle"]
+    assert api.get(f"/assets/{photo}/beats").status_code == 422
+
+
+def test_green_screen_and_background_steps(tmp_path: Path) -> None:
+    engine = Engine.open(tmp_path / "store")
+    clip = engine.store.put_file(CLIP).handle
+    photo = engine.store.put_file(FIXTURES / "photo.jpg").handle
+    edit = EditIn(
+        source=clip,
+        background={"mode": "blur"},
+        green_screen={"handle": photo},
+    )
+    spec = build_spec(edit, 4.0, green_handle=photo)
+    ops = [s["op"] for s in spec["steps"]]
+    assert ops == ["video.remove_background", "video.chromakey", "export"]
+    assert "a new background" in describe(edit, kept_parts(edit, 4.0), 4.0)
+    only_key = EditIn(source=clip, green_screen={"handle": photo})
+    out = engine.store.path(engine.run(build_spec(only_key, 4.0, green_handle=photo)).outputs["out"].hash)
+    assert float(probe(out)["format"]["duration"]) == pytest.approx(4.0, abs=0.25)

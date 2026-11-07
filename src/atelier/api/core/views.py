@@ -879,12 +879,13 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
         music_handle = info.handle
         made.append((info.handle, "music.mp3"))
 
+    green_handle = _resolve(engine, body.green_screen.handle).handle if body.green_screen else None
     overlay_infos = [_resolve(engine, o.handle) for o in body.overlays]
     overlay_handles = [i.handle for i in overlay_infos]
     overlay_media = [i.media.value for i in overlay_infos]
     has_audio = bool(engine.probe(source).get("audio"))
     spec = edits.build_spec(
-        body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles, overlay_media
+        body, duration, voice_handle, music_handle, has_audio, overlay_handles, append_handles, overlay_media, green_handle
     )
     _validated(engine, spec)
     if body.draft:
@@ -904,6 +905,19 @@ def edit_by_hand(request: HttpRequest, job_id: str, body: EditIn) -> Status[dict
     enqueue(job)
     job.refresh_from_db()
     return Status(202, services.job_dict(job))
+
+
+@api.get("/assets/{handle}/beats")
+def beats(request: HttpRequest, handle: str) -> dict[str, Any]:
+    """The tempo of a piece of music (or a video's sound) and when its beats fall."""
+    from atelier.av import beats as tempo
+
+    org = _org(request)
+    engine = services.engine_for(org)
+    info = _resolve(engine, handle)
+    if info.media not in (MediaType.AUDIO, MediaType.VIDEO):
+        raise ApiError(422, "bad_request", "only sound and video have a tempo")
+    return tempo.analyse(tempo.decode(engine.store.path(info.hash)))
 
 
 @api.post("/assets/{handle}/cutout", response={202: dict[str, Any]})

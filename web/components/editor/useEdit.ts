@@ -150,7 +150,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { items: uploads, upload } = useUpload();
-  const [uploadFor, setUploadFor] = useState<"voice" | "music" | "sticker" | "clip" | null>(null);
+  const [uploadFor, setUploadFor] = useState<"voice" | "music" | "sticker" | "clip" | "green" | null>(null);
   const [muted, setMuted] = useState(UNMUTED);
   const [adjust, setAdjust] = useState<Adjust>(NEUTRAL);
   const [filter, setFilter] = useState("none");
@@ -162,9 +162,13 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   const [denoise, setDenoise] = useState(false);
   const [loudnorm, setLoudnorm] = useState(false);
   const [stabilize, setStabilize] = useState(false);
+  const [background, setBackground] = useState<{ mode: "blur" | "color"; color: string } | null>(null);
+  const [green, setGreen] = useState<{ handle: string; name: string; color: string; similarity: number } | null>(null);
   const [clips, setClips] = useState<Clip[]>([]);
   const [cutting, setCutting] = useState<number | null>(null);
   const [bpm, setBpm] = useState(0);
+  const [beatOffset, setBeatOffset] = useState(0);
+  const [finding, setFinding] = useState(false);
   const [snap, setSnap] = useState(false);
   const [making, setMaking] = useState<"" | "voice" | "music">("");
 
@@ -195,7 +199,10 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setLoudnorm(false);
     setStabilize(false);
     setClips([]);
+    setBackground(null);
+    setGreen(null);
     setBpm(0);
+    setBeatOffset(0);
     setSnap(false);
     setError("");
   }
@@ -224,7 +231,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     used.current.add(done.id);
     const handle = done.asset.handle;
     const name = done.file.name;
-    if (uploadFor === "clip") {
+    if (uploadFor === "green") setGreen((g) => ({ handle, name, color: g?.color ?? "#00ff00", similarity: g?.similarity ?? 0.3 }));
+    else if (uploadFor === "clip") {
       void fetch(`/api/proxy/assets/${encodeURIComponent(handle)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((info: { summary?: string } | null) => {
@@ -445,7 +453,27 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     });
   }
   /** The playhead, moved to the nearest beat when snapping is on. */
-  const snapped = snap && bpm > 0 ? Math.round(now / (60 / bpm)) * (60 / bpm) : now;
+  const snapped =
+    snap && bpm > 0 ? beatOffset + Math.round((now - beatOffset) / (60 / bpm)) * (60 / bpm) : now;
+  /** Listen to the music (or the video's own sound) and set the tempo and the first beat. */
+  async function findBeats() {
+    const handle = music.on && music.handle ? music.handle : source;
+    setFinding(true);
+    setError("");
+    try {
+      const r = await fetch(`/api/proxy/assets/${encodeURIComponent(handle)}/beats`);
+      if (!r.ok) throw new Error((await readApiError(r)).message);
+      const found: { bpm: number; offset: number } = await r.json();
+      if (!found.bpm) throw new Error("No clear beat found in that sound.");
+      setBpm(Math.round(found.bpm));
+      setBeatOffset(found.offset);
+      setSnap(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No clear beat found.");
+    } finally {
+      setFinding(false);
+    }
+  }
   function split() {
     const at = snapped;
     setParts(() =>
@@ -543,6 +571,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     denoise ||
     loudnorm ||
     stabilize ||
+    background !== null ||
+    green !== null ||
     kept.some((p) => (p.speed ?? 1) !== 1 || p.reverse || (p.hold ?? 0) > 0) ||
     clips.length > 0 ||
     muted.video ||
@@ -634,6 +664,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       denoise,
       loudnorm,
       stabilize,
+      ...(background ? { background } : {}),
+      ...(green ? { green_screen: { handle: green.handle, color: green.color, similarity: green.similarity } } : {}),
     };
   }
 
@@ -679,7 +711,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
   // -- undo / redo: a snapshot of everything you can set, taken a moment after each change ----
   const doc = {
     parts, shape, focus, volume, speed, texts, voice, music, sounds, muted, adjust, filter,
-    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips,
+    fadeIn, fadeOut, transition, captions, overlays, denoise, loudnorm, stabilize, clips, background, green,
   };
   const sig = JSON.stringify(doc);
   const history = useRef<{ source: string; stack: string[]; at: number }>({ source: "", stack: [], at: -1 });
@@ -715,6 +747,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     denoise ||
     loudnorm ||
     stabilize ||
+    background !== null ||
+    green !== null ||
     clips.length > 0 ||
     (voice.on && Boolean(voice.effect)) ||
     overlays.some((o) => o.video) ||
@@ -780,6 +814,8 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setLoudnorm(d.loudnorm);
     setStabilize(d.stabilize);
     setClips(d.clips ?? []);
+    setBackground(d.background ?? null);
+    setGreen(d.green ?? null);
   }
   function undo() {
     const h = history.current;
@@ -878,7 +914,7 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
       setCutting(null);
     }
   }
-  function pickFile(for_: "voice" | "music" | "sticker" | "clip") {
+  function pickFile(for_: "voice" | "music" | "sticker" | "clip" | "green") {
     setUploadFor(for_);
     fileInput.current?.click();
   }
@@ -973,6 +1009,10 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     makingOnSave,
     save,
     splitLayers,
+    background,
+    setBackground,
+    green,
+    setGreen,
     addEmoji,
     cutOut,
     cutting,
@@ -987,6 +1027,9 @@ export function useEdit(jobId: string, source: string, sound: Soundtrack | null 
     setClips,
     bpm,
     setBpm,
+    beatOffset,
+    findBeats,
+    finding,
     snap,
     setSnap,
     hasSoundLayer: sound !== null,
