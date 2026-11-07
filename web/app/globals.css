@@ -102,7 +102,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  @theme {
+  :root {
+    color-scheme: dark;
     --color-bg: #121214;
     --color-bg-subtle: #19191c;
     --color-bg-inset: #232327;

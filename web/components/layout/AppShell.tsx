@@ -21,7 +21,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-screen">
       <Sidebar email={email} />
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-10 py-10">{children}</div>
+        <div className="mx-auto max-w-5xl px-5 pb-10 pt-[4.5rem] md:px-10 md:py-10">{children}</div>
       </main>
     </div>
   );
