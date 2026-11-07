@@ -234,13 +234,12 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
-  background: var(--color-bg-inset);
-  box-shadow: inset 0 0 0 0.5px var(--color-border-strong);
+  background: var(--color-border-strong);
 }
 input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 999px;
-  background: var(--color-bg-inset);
+  background: var(--color-border-strong);
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;

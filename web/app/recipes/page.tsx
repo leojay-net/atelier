@@ -13,7 +13,7 @@ export default async function RecipesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-fg">Recipes</h1>
+        <h1 className="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.03em] text-fg">Recipes</h1>
         <p className="mt-1 text-[13px] text-fg-secondary">
           Saved pipelines you can run again on new assets.
         </p>

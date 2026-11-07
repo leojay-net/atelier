@@ -27,7 +27,7 @@ export default async function JobsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-fg">Jobs</h1>
+        <h1 className="animate-rise text-[30px] font-semibold leading-tight tracking-[-0.03em] text-fg">Jobs</h1>
         <p className="mt-1 text-[13px] text-fg-secondary">{count} total.</p>
       </div>
 
