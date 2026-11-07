@@ -2,8 +2,9 @@
 
 /* eslint-disable react-hooks/refs -- `edit` is one object from useEdit; its functions read refs only in event handlers, which the rule can't see through */
 
-import { useRef } from "react";
-import { ArrowDown, ArrowUp, AudioLines, Captions, Film, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
+import { useRef, useState } from "react";
+import { STICKER_SHAPES, SHAPE_COLORS } from "./shapes";
+import { ArrowDown, ArrowUp, AudioLines, Captions, Check, Film, Gauge, ImagePlus, Loader2, Mic, Music, RotateCcw, Sparkles, Trash2, Type } from "lucide-react";
 import type { Job } from "@/lib/types";
 import { Btn, Slider, field } from "./EditUi";
 import {
@@ -28,7 +29,6 @@ const ANCHORS: Anchor[] = [
 ];
 
 const del = "text-fg-tertiary hover:text-status-failed";
-const EMOJI = ["😀", "😂", "😍", "😎", "🔥", "❤️", "👍", "🎉", "✨", "⭐", "💯", "🎂", "🎁", "🌈", "👑", "🚀", "💥", "👏", "😱", "🤔", "🙌", "🎵", "📍", "✅"];
 
 /** The hidden picker behind "Or use a recording" and "My song". */
 export function EditFileInput({ edit }: { edit: Edit }) {
@@ -228,7 +228,7 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
           <>
             {voice.handle && !voice.ai ? (
               <div className="flex items-center justify-between rounded-md bg-bg-subtle px-2 py-1.5">
-                <span className="truncate">🎙 {voice.name || "Your recording"}</span>
+                <span className="flex items-center gap-1.5 truncate"><Mic size={13} /> {voice.name || "Your recording"}</span>
                 <button
                   type="button"
                   className="text-[12px] text-accent hover:underline"
@@ -270,8 +270,8 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
                   ))}
                 </select>
                 {voice.ai && voice.handle ? (
-                  <p className="text-[12px] text-status-succeeded">
-                    ✓ Voiceover ready ({voice.name}). Press play to hear it with the video.
+                  <p className="flex items-center gap-1.5 text-[12px] text-status-succeeded">
+                    <Check size={13} /> Voiceover ready ({voice.name}). Press play to hear it with the video.
                   </p>
                 ) : (
                   <Btn onClick={() => edit.makeSound("voice")} disabled={!voice.text.trim() || making === "voice"}>
@@ -360,8 +360,8 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
                   className={field}
                 />
                 {music.ai && music.handle ? (
-                  <p className="text-[12px] text-status-succeeded">
-                    ✓ Music ready ({music.name}). Press play to hear it with the video.
+                  <p className="flex items-center gap-1.5 text-[12px] text-status-succeeded">
+                    <Check size={13} /> Music ready ({music.name}). Press play to hear it with the video.
                   </p>
                 ) : (
                   <Btn onClick={() => edit.makeSound("music")} disabled={!music.compose.trim() || making === "music"}>
@@ -371,7 +371,7 @@ export function AudioPanel({ edit, onSplit }: { edit: Edit; onSplit: (job: Job) 
                 )}
               </>
             ) : music.handle ? (
-              <p className="rounded-md bg-bg-subtle px-2 py-1.5">♪ {music.name}</p>
+              <p className="flex items-center gap-1.5 rounded-md bg-bg-subtle px-2 py-1.5"><Music size={13} /> {music.name}</p>
             ) : null}
             <Slider
               label={`Music volume ${Math.round(music.volume * 100)}%`}
@@ -815,12 +815,13 @@ export function FiltersPanel({ edit }: { edit: Edit }) {
             }`}
           >
             <span
-              className="block h-12 w-full"
-              style={{
-                background: "linear-gradient(135deg,#e2574c,#f2c14e 35%,#3fa796 65%,#4a6fd6)",
-                filter: `brightness(${1 + f.adjust.brightness}) contrast(${f.adjust.contrast}) saturate(${f.adjust.saturation})`,
-              }}
-            />
+              className="grid h-12 w-full grid-cols-4"
+              style={{ filter: `brightness(${1 + f.adjust.brightness}) contrast(${f.adjust.contrast}) saturate(${f.adjust.saturation})` }}
+            >
+              {["#e2574c", "#f2c14e", "#3fa796", "#4a6fd6"].map((c) => (
+                <span key={c} style={{ background: c }} />
+              ))}
+            </span>
             <span className="block truncate px-1 py-1">{f.label}</span>
           </button>
         ))}
@@ -846,6 +847,7 @@ export function FiltersPanel({ edit }: { edit: Edit }) {
 /** Pictures laid over the video: stickers, logos, a photo in the corner. */
 export function StickersPanel({ edit }: { edit: Edit }) {
   const { overlays, setOverlays, now } = edit;
+  const [shapeColor, setShapeColor] = useState(SHAPE_COLORS[1]!);
   const patch = (id: number, p: Partial<(typeof overlays)[number]>) =>
     setOverlays(overlays.map((o) => (o.id === id ? { ...o, ...p } : o)));
   return (
@@ -853,16 +855,32 @@ export function StickersPanel({ edit }: { edit: Edit }) {
       <Btn onClick={() => edit.pickFile("sticker")}>
         <ImagePlus size={13} /> Add a picture or video
       </Btn>
-      <div className="grid grid-cols-8 gap-1" role="group" aria-label="Emoji stickers">
-        {EMOJI.map((m) => (
+      <div className="flex items-center gap-1.5" role="group" aria-label="Sticker colour">
+        {SHAPE_COLORS.map((c) => (
           <button
-            key={m}
+            key={c}
             type="button"
-            aria-label={`Add ${m}`}
-            onClick={() => edit.addEmoji(m)}
-            className="grid h-8 place-items-center rounded-md text-[18px] hover:bg-bg-inset"
+            aria-label={`Colour ${c}`}
+            aria-pressed={shapeColor === c}
+            onClick={() => setShapeColor(c)}
+            className={`h-5 w-5 rounded-full shadow-[inset_0_0_0_1px_rgba(128,128,128,0.45)] transition-transform hover:scale-110 ${shapeColor === c ? "ring-2 ring-accent ring-offset-2 ring-offset-bg" : ""}`}
+            style={{ background: c }}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1" role="group" aria-label="Shape stickers">
+        {STICKER_SHAPES.map((m) => (
+          <button
+            key={m.key}
+            type="button"
+            title={m.label}
+            aria-label={`Add ${m.label}`}
+            onClick={() => void edit.addShape(m.key, shapeColor)}
+            className="grid h-9 place-items-center rounded-md hover:bg-bg-inset"
           >
-            {m}
+            <svg viewBox="0 0 24 24" width="20" height="20" fill={shapeColor} fillRule={m.evenodd ? "evenodd" : "nonzero"} stroke="rgba(128,128,128,0.5)" strokeWidth="0.6">
+              <path d={m.path} />
+            </svg>
           </button>
         ))}
       </div>

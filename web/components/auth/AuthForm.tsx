@@ -9,8 +9,8 @@ import { Card } from "@/components/ui/Card";
 type Action = (state: AuthState, form: FormData) => Promise<AuthState>;
 
 const input =
-  "w-full rounded-sm border border-border-strong bg-bg px-3 py-2 text-sm text-fg outline-none " +
-  "focus:border-accent";
+  "h-11 w-full rounded-md border border-border-strong bg-bg px-3.5 text-[14px] text-fg outline-none " +
+  "placeholder:text-fg-tertiary hover:border-fg-tertiary/70";
 
 export function AuthForm({
   mode,
@@ -27,11 +27,11 @@ export function AuthForm({
   const signup = mode === "signup";
 
   return (
-    <Card className="w-full max-w-sm p-7">
-      <h1 className="text-lg font-semibold tracking-tight text-fg">
+    <Card className="animate-rise w-full max-w-[400px] p-8 shadow-[var(--shadow-raised)]">
+      <h1 className="text-[22px] font-semibold tracking-tight text-fg">
         {signup ? "Create your account" : "Sign in to Atelier"}
       </h1>
-      <p className="mt-1 text-[13px] text-fg-secondary">
+      <p className="mt-1.5 text-[14px] text-fg-secondary">
         {signup
           ? "Your uploads and edits are private to your account."
           : "Welcome back. Your workspace is waiting."}
@@ -93,7 +93,7 @@ export function AuthForm({
             />
           </label>
         )}
-        <Button type="submit" loading={pending} className="mt-1 w-full">
+        <Button type="submit" loading={pending} className="mt-2 h-11 w-full">
           {signup ? "Create account" : "Sign in"}
         </Button>
       </form>

@@ -197,11 +197,11 @@ function Activity({ lines }: { lines: ReturnType<typeof activityLines> }) {
 
 function Bubble({ who, children }: { who: "you" | "ai"; children: React.ReactNode }) {
   return (
-    <div className={clsx("flex", who === "you" ? "justify-end" : "justify-start")}>
+    <div className={clsx("animate-rise flex", who === "you" ? "justify-end" : "justify-start")}>
       <div
         className={clsx(
           "max-w-[88%] space-y-2 rounded-2xl px-3.5 py-2.5 text-[14px] leading-relaxed",
-          who === "you" ? "rounded-br-sm border border-accent/30 bg-accent-subtle-bg text-fg" : "rounded-bl-sm bg-bg-subtle text-fg",
+          who === "you" ? "rounded-br-md bg-accent text-on-accent" : "rounded-bl-md bg-bg-subtle text-fg",
         )}
       >
         {children}
@@ -500,7 +500,14 @@ function TabBar<T extends string>({
   tour?: string;
 }) {
   return (
-    <div role="tablist" data-tour={tour} className="@container flex shrink-0 border-b border-border">
+    <div role="tablist" data-tour={tour} className="@container relative flex shrink-0 border-b border-border">
+      <span
+        aria-hidden
+        className="pointer-events-none absolute bottom-[-1px] left-0 h-[2px] transition-transform duration-500 ease-[var(--ease-out)]"
+        style={{ width: `${100 / tabs.length}%`, transform: `translateX(${Math.max(0, tabs.findIndex((t) => t.key === value)) * 100}%)` }}
+      >
+        <span className="mx-3 block h-full rounded-full bg-accent" />
+      </span>
       {tabs.map(({ key, label, icon: Icon, disabled, hint }) => (
         <button
           key={key}
@@ -511,10 +518,10 @@ function TabBar<T extends string>({
           title={disabled ? hint : label}
           onClick={() => onChange(key)}
           className={clsx(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 border-b-2 px-1 py-2 text-[11px] font-medium @[420px]:flex-row @[420px]:gap-1.5 @[420px]:px-2 @[420px]:py-2.5 @[420px]:text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+            "flex flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium @[420px]:flex-row @[420px]:gap-1.5 @[420px]:px-2 @[420px]:py-3 @[420px]:text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-35",
             value === key
-              ? "border-accent text-fg"
-              : "border-transparent text-fg-tertiary hover:text-fg-secondary disabled:hover:text-fg-tertiary",
+              ? "text-fg"
+              : "text-fg-tertiary hover:text-fg-secondary disabled:hover:text-fg-tertiary",
           )}
         >
           <Icon size={14} />
@@ -686,7 +693,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
       <EditFileInput edit={edit} />
 
       {/* top bar */}
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
+      <header className="animate-fade flex h-13 shrink-0 items-center gap-1 border-b border-border bg-bg px-3">
         <span className="hidden md:block">
           <IconBtn label={history.width ? "Hide history" : "Show history"} onClick={history.toggle} active={history.width > 0}>
             <PanelLeft size={17} />
@@ -718,7 +725,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
               href={contentUrl(shown.handle)}
               download={`atelier-${shown.handle.slice(6, 14)}${shown.ext}`}
               data-tour="download"
-              className="flex items-center gap-1.5 rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-fg transition-colors hover:bg-bg-inset"
+              className="flex items-center gap-1.5 rounded-full border border-border-strong px-3.5 py-1.5 text-[13px] font-medium text-fg transition-colors hover:bg-bg-inset"
             >
               <Download size={14} /> <span className="hidden sm:inline">Download</span>
             </a>
@@ -730,7 +737,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
               disabled={!canSave}
               onClick={() => edit.save(adopt)}
               title={canSave ? "Save your edits as a new version" : "Make an edit to save a new version"}
-              className="flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
+              className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-[13px] font-semibold text-on-accent shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[background-color,opacity,transform] hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent"
             >
               {edit.saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               {edit.saving ? (edit.makingOnSave ? "Making the sound…" : "Saving…") : "Save version"}

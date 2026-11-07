@@ -113,23 +113,25 @@ export function Tour({ id, steps }: { id: string; steps: TourStep[] }) {
       {/* blocks clicks on the page, and dims it everywhere except the lit area */}
       <div className="absolute inset-0" onClick={end} />
       <div
-        className="pointer-events-none absolute rounded-xl transition-all duration-200"
+        className="pointer-events-none absolute rounded-2xl transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
         style={{
           left: rect.left - PAD,
           top: rect.top - PAD,
           width: rect.width + PAD * 2,
           height: rect.height + PAD * 2,
-          boxShadow: "0 0 0 9999px rgba(5,7,10,0.72), 0 0 0 2px #5aa2ff",
+          boxShadow: "0 0 0 9999px rgba(5,7,10,0.68), 0 0 0 2px #5aa2ff, 0 0 0 7px rgba(90,162,255,0.2)",
         }}
       />
       <div
-        className="absolute rounded-xl border border-[#333a46] bg-[#181c22] p-4 text-[#e6e9ee] shadow-2xl"
+        className="animate-pop absolute rounded-2xl border border-[#2e2e36] bg-[#17171b] p-5 text-[#f1f1f4] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)] transition-[left,top] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
         style={{ left, top, width: CARD_W }}
       >
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-[#5aa2ff]">
-          Step {at + 1} of {live.length}
-        </p>
-        <p className="mt-1 text-[15px] font-semibold">{step.title}</p>
+        <div className="flex gap-1" aria-label={`Step ${at + 1} of ${live.length}`}>
+          {live.map((_, i) => (
+            <span key={i} className={`h-1 rounded-full transition-all duration-500 ${i === at ? "w-5 bg-[#5aa2ff]" : "w-1.5 bg-[#3a3a42]"}`} />
+          ))}
+        </div>
+        <p className="mt-3 text-[16px] font-semibold tracking-[-0.01em]">{step.title}</p>
         <p className="mt-1 text-[13px] leading-relaxed text-[#a2a9b5]">{step.body}</p>
         <div className="mt-4 flex items-center justify-between">
           <button type="button" onClick={end} className="text-[12.5px] text-[#727a88] hover:text-[#e6e9ee]">
@@ -140,7 +142,7 @@ export function Tour({ id, steps }: { id: string; steps: TourStep[] }) {
               <button
                 type="button"
                 onClick={() => setAt(at - 1)}
-                className="rounded-md border border-[#333a46] px-3 py-1.5 text-[13px] hover:bg-[#20252d]"
+                className="rounded-full border border-[#3a3a42] px-3.5 py-1.5 text-[13px] hover:bg-[#232329]"
               >
                 Back
               </button>
@@ -149,7 +151,7 @@ export function Tour({ id, steps }: { id: string; steps: TourStep[] }) {
               type="button"
               autoFocus
               onClick={() => (last ? end() : setAt(at + 1))}
-              className="rounded-md bg-[#5aa2ff] px-3.5 py-1.5 text-[13px] font-semibold text-[#07101c] hover:bg-[#7cb4ff]"
+              className="rounded-full bg-[#5aa2ff] px-4 py-1.5 text-[13px] font-semibold text-[#07101c] hover:bg-[#7cb4ff]"
             >
               {last ? "Done" : "Next"}
             </button>

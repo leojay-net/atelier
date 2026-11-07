@@ -21,6 +21,7 @@ import {
 import clsx from "clsx";
 import { logout } from "@/app/(auth)/actions";
 import type { Conversation } from "@/lib/types";
+import { Logo } from "./Logo";
 import { DeleteChatChoice, deleteChat, renameChat } from "@/components/chats/chatActions";
 
 /** Studio and sidebar talk through these window events (the studio keeps its own URL). */
@@ -114,7 +115,7 @@ function ChatRow({ chat, active, onChanged }: { chat: Conversation; active: bool
     <div ref={box} className="relative">
       <div
         className={clsx(
-          "group flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-[13px] transition-colors",
+          "group flex items-center gap-2 rounded-md px-3 py-2 text-[13px] transition-colors",
           active ? "bg-bg-inset text-fg" : "text-fg-secondary hover:bg-bg-inset hover:text-fg",
         )}
       >
@@ -193,7 +194,7 @@ export function RecentChats({ active }: { active: string | null }) {
   if (!chats.length)
     return <p className="px-2.5 py-1 text-[12px] text-fg-tertiary">Your chats will show up here.</p>;
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="stagger flex flex-col gap-0.5">
       {chats.map((c) => (
         <ChatRow
           key={c.id}
@@ -220,9 +221,10 @@ export function Sidebar({ email }: { email: string }) {
   if (pathname.startsWith("/studio")) return null;
 
   return (
-    <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-bg-subtle">
-      <div className="flex h-14 items-center px-5">
-        <span className="text-[15px] font-semibold tracking-tight text-fg">Atelier</span>
+    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-bg-subtle">
+      <div className="flex h-16 items-center gap-2.5 px-5">
+        <Logo size={26} />
+        <span className="text-[16px] font-semibold tracking-[-0.02em] text-fg">Atelier</span>
       </div>
 
       <div className="px-3">
@@ -230,9 +232,9 @@ export function Sidebar({ email }: { email: string }) {
           type="button"
           onClick={newChat}
           className={clsx(
-            "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+            "flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[14px] font-medium transition-colors",
             inStudio && !activeChat
-              ? "bg-accent-subtle-bg text-accent"
+              ? "bg-accent text-on-accent shadow-[0_1px_2px_rgba(0,0,0,0.14)] hover:bg-accent-hover"
               : "text-fg-secondary hover:bg-bg-inset hover:text-fg",
           )}
         >
@@ -243,20 +245,20 @@ export function Sidebar({ email }: { email: string }) {
       </div>
 
       <div className="mt-1 min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-        <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-fg-tertiary">
-          Recent chats
+        <p className="px-3 pb-1.5 pt-4 text-[11px] font-medium tracking-wide text-fg-tertiary">
+          Recent
         </p>
         <RecentChats active={activeChat} />
       </div>
 
-      <nav className="flex flex-col gap-0.5 border-t border-border px-3 py-2">
+      <nav className="flex flex-col gap-0.5 border-t border-border px-3 py-3">
         {NAV.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
             data-tour={`nav-${label.toLowerCase()}`}
             className={clsx(
-              "flex items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-2.5 rounded-md px-3 py-2 text-[14px] font-medium transition-colors",
               pathname.startsWith(href)
                 ? "bg-accent-subtle-bg text-accent"
                 : "text-fg-secondary hover:bg-bg-inset hover:text-fg",
@@ -269,13 +271,13 @@ export function Sidebar({ email }: { email: string }) {
       </nav>
 
       <div className="border-t border-border px-3 py-3">
-        <p className="truncate px-2.5 text-[12px] text-fg-secondary" title={email}>
+        <p className="truncate px-3 text-[12px] text-fg-tertiary" title={email}>
           {email}
         </p>
         <form action={logout}>
           <button
             type="submit"
-            className="mt-1 flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm font-medium text-fg-secondary transition-colors hover:bg-bg-inset hover:text-fg"
+            className="mt-1 flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[14px] font-medium text-fg-secondary transition-colors hover:bg-bg-inset hover:text-fg"
           >
             <LogOut size={17} strokeWidth={2} />
             Sign out

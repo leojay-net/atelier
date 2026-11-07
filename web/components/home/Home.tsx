@@ -8,6 +8,7 @@ import clsx from "clsx";
 import {
   Clapperboard,
   Film,
+  CircleHelp,
   GraduationCap,
   ImagePlay,
   Loader2,
@@ -86,11 +87,11 @@ function ProjectCard({ chat, onChanged }: { chat: Conversation; onChanged: () =>
     <div ref={box} className="group relative">
       <Link
         href={`/studio/${chat.id}`}
-        className="block overflow-hidden rounded-lg border border-border bg-bg transition hover:border-border-strong hover:shadow-card"
+        className="lift block overflow-hidden rounded-xl border border-border bg-bg shadow-[var(--shadow-card)]"
       >
-        <div className="relative aspect-video bg-bg-inset">
+        <div className="relative aspect-video overflow-hidden bg-bg-inset">
           {p?.media === "video" ? (
-            <video src={contentUrl(p.handle)} muted preload="metadata" className="h-full w-full object-cover" />
+            <video src={contentUrl(p.handle)} muted preload="metadata" className="h-full w-full object-cover transition-transform duration-700 ease-[var(--ease-out)] group-hover:scale-[1.04]" />
           ) : p?.media === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin URL
             <img src={contentUrl(p.handle)} alt="" className="h-full w-full object-cover" />
@@ -105,8 +106,8 @@ function ProjectCard({ chat, onChanged }: { chat: Conversation; onChanged: () =>
             </span>
           ) : null}
         </div>
-        <div className="px-3 py-2.5">
-          <p className="truncate text-[13.5px] font-medium text-fg" title={chat.title}>
+        <div className="px-3.5 py-3">
+          <p className="truncate text-[14px] font-medium tracking-[-0.01em] text-fg" title={chat.title}>
             {chat.title}
           </p>
           <p className="text-[12px] text-fg-tertiary">{ago(chat.updated_at)}</p>
@@ -250,7 +251,7 @@ export function Home() {
 
   return (
     <div
-      className="space-y-10"
+      className="space-y-12"
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
@@ -262,20 +263,20 @@ export function Home() {
     >
       <section>
         <div className="flex items-start justify-between">
-          <h1 className="text-[28px] font-semibold tracking-tight text-fg">What do you want to make?</h1>
+          <h1 className="animate-rise text-[34px] font-semibold leading-tight tracking-[-0.03em] text-fg">What do you want to make?</h1>
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event(TOUR_EVENT))}
-            className="rounded-md px-2.5 py-1.5 text-[13px] text-fg-secondary hover:bg-bg-inset hover:text-fg"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border-strong px-3 py-1.5 text-[13px] text-fg-secondary hover:bg-bg-inset hover:text-fg"
           >
-            ? Guide
+            <CircleHelp size={14} /> Guide
           </button>
         </div>
 
         <div
           data-tour="prompt"
           className={clsx(
-            "mt-4 rounded-2xl border bg-bg p-3 shadow-card transition-colors focus-within:border-accent",
+            "animate-rise mt-6 rounded-2xl border bg-bg p-4 shadow-[var(--shadow-card)] transition-[border-color,box-shadow,background-color] duration-300 focus-within:border-accent focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-accent)_16%,transparent),var(--shadow-raised)]",
             dragging ? "border-accent bg-accent-subtle-bg" : "border-border-strong",
           )}
         >
@@ -296,10 +297,10 @@ export function Home() {
                 create();
               }
             }}
-            rows={3}
+            rows={4}
             aria-label="What do you want to make?"
             placeholder="e.g. a 15-second reel from my photos with upbeat music"
-            className="w-full resize-none bg-transparent px-2 py-1.5 text-[15px] text-fg outline-none placeholder:text-fg-tertiary"
+            className="w-full resize-none bg-transparent px-2 py-1.5 text-[16px] leading-relaxed text-fg outline-none placeholder:text-fg-tertiary"
           />
           <div className="mt-1 flex items-center gap-2">
             <button
@@ -307,7 +308,7 @@ export function Home() {
               data-tour="attach"
               onClick={() => fileInput.current?.click()}
               aria-label="Add photos, videos or music"
-              className="rounded-md p-2 text-fg-secondary hover:bg-bg-inset hover:text-fg"
+              className="rounded-full p-2 text-fg-secondary hover:bg-bg-inset hover:text-fg"
             >
               <Paperclip size={18} />
             </button>
@@ -328,7 +329,7 @@ export function Home() {
               type="button"
               onClick={create}
               disabled={!text.trim() || creating || uploading}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-semibold text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-40"
+              className="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[14px] font-semibold text-on-accent shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition-[background-color,opacity,transform] hover:bg-accent-hover disabled:opacity-35"
             >
               {creating ? <Loader2 size={15} className="animate-spin" /> : <SendHorizonal size={15} />}
               {uploading ? "Uploading…" : "Create"}
@@ -337,7 +338,7 @@ export function Home() {
         </div>
         {error ? <p className="mt-2 text-[13px] text-status-failed">{error}</p> : null}
 
-        <div data-tour="quick" className="mt-4 flex flex-wrap items-center gap-2">
+        <div data-tour="quick" className="stagger mt-5 flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-fg-secondary">Quick start:</span>
           {QUICK.map(({ label, icon: Icon, prompt }) => (
             <button
@@ -347,7 +348,7 @@ export function Home() {
                 setText(prompt);
                 box.current?.focus();
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border-strong px-3 py-1.5 text-[13px] text-fg-secondary transition-colors hover:border-accent hover:text-fg"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-bg px-3.5 py-1.5 text-[13px] text-fg-secondary hover:border-accent hover:bg-accent-subtle-bg hover:text-accent"
             >
               <Icon size={14} /> {label}
             </button>
@@ -356,19 +357,19 @@ export function Home() {
       </section>
 
       <section data-tour="projects">
-        <h2 className="mb-3 text-[16px] font-semibold text-fg">Your projects</h2>
+        <h2 className="mb-4 text-[20px] font-semibold tracking-[-0.02em] text-fg">Your projects</h2>
         {projects === null ? (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4">
             {[0, 1, 2, 3].map((n) => (
-              <div key={n} className="aspect-[4/3] animate-pulse rounded-lg bg-bg-inset" />
+              <div key={n} className="skeleton aspect-[4/3] rounded-xl" />
             ))}
           </div>
         ) : projects.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border-strong px-6 py-10 text-center text-[14px] text-fg-secondary">
+          <div className="rounded-xl border border-dashed border-border-strong px-6 py-12 text-center text-[14px] text-fg-secondary">
             Nothing here yet. Describe a video above and your first project will appear.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="stagger grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4">
             {projects.map((c) => (
               <ProjectCard
                 key={c.id}

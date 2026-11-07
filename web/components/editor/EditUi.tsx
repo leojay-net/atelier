@@ -22,7 +22,7 @@ export function Btn({
       disabled={disabled}
       title={title}
       className={clsx(
-        "inline-flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        "inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-[12.5px] font-medium transition-[background-color,border-color,color,transform] disabled:cursor-not-allowed disabled:opacity-40",
         active
           ? "border-accent bg-accent-subtle-bg text-accent"
           : "border-border-strong bg-bg-subtle text-fg hover:bg-bg-inset",
@@ -65,4 +65,4 @@ export function Slider({
 }
 
 export const field =
-  "w-full rounded-md border border-border-strong bg-bg-subtle px-2 py-1.5 text-fg outline-none focus:border-accent";
+  "w-full rounded-md border border-border-strong bg-bg-subtle px-2.5 py-1.5 text-fg outline-none hover:border-fg-tertiary/60";

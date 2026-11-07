@@ -19,7 +19,6 @@ function Thumb({ handle, media, label }: { handle: string; media: MediaType | un
     return <video src={contentUrl(handle)} muted preload="metadata" className="h-full w-full object-cover" />;
   return (
     <span className="flex h-full items-center justify-center px-2 text-center text-[11px] text-fg-tertiary">
-      {media === "audio" ? "♪ " : ""}
       {label}
     </span>
   );
