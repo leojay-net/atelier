@@ -776,7 +776,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
           <aside
             data-tour="tools"
             style={{ "--w": `${tools.width}px` } as React.CSSProperties}
-            className="hidden shrink-0 flex-col overflow-hidden bg-bg md:flex md:w-[var(--w)]"
+            className="order-2 flex max-h-[70vh] min-h-[320px] w-full shrink-0 flex-col overflow-hidden border-t border-border bg-bg md:order-none md:max-h-none md:min-h-0 md:w-[var(--w)] md:border-t-0"
           >
             <TabBar tabs={toolTabs} value={tool} onChange={setTool} tour="tool-tabs" />
             <div className="min-h-0 flex-1 overflow-y-auto p-3 text-[13px] text-fg">
@@ -827,7 +827,7 @@ export function Studio({ initialThread, initialAsset }: { initialThread: Job[]; 
           <aside
             data-tour="assistant"
             style={{ "--w": `${chat.width}px` } as React.CSSProperties}
-            className="flex h-[75vh] shrink-0 flex-col overflow-hidden border-t border-border bg-bg md:h-auto md:w-[var(--w)] md:border-t-0"
+            className="order-3 flex h-[75vh] shrink-0 flex-col overflow-hidden border-t border-border bg-bg md:order-none md:h-auto md:w-[var(--w)] md:border-t-0"
           >
             <TabBar tabs={sideTabs} value={sideTab} onChange={setSide} />
             {sideTab === "props" ? (
