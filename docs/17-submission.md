@@ -70,10 +70,14 @@ documents but cannot afford an editor or a monthly seat for every tool. Atelier 
   different layers and the video should say so.
 - Generated pictures, video and music depend on Vultr inference availability and latency; a
   full animated episode takes minutes.
-- Not built yet: multi-clip timeline, keyframes, background removal, masks, a large sticker or
-  sound library (see `docs/16-capcut-gap-analysis.md`).
+- Not built yet: easing curves on every setting, a separate timeline lane per overlay video,
+  transitions between added clips, a large downloadable sticker or sound library (see
+  `docs/16-capcut-gap-analysis.md`).
 
 ## 6. Demo video shot list (about 3 minutes)
+
+The full, timed shot list with scripts and fallbacks is in `docs/18-demo-video-shot-list.md`.
+Summary:
 
 1. **0:00–0:30 Problem and idea.** Show the architecture diagram: the model writes a spec, the
    engine renders it.
